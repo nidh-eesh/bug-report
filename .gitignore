@@ -1,0 +1,8 @@
+.turbo/
+*.tgz
+coverage/
+demo-dist/
+dist/
+node_modules/
+test-results/
+playwright-report/

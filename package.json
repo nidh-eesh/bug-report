@@ -1,0 +1,116 @@
+{
+  "name": "@nidh-eesh/bug-report",
+  "version": "0.1.0",
+  "description": "An accessible, themeable bug-report form and dialog with provider-neutral transports and optional screenshot capture.",
+  "keywords": [
+    "bug-report",
+    "feedback",
+    "react",
+    "sentry",
+    "screenshot",
+    "support-widget"
+  ],
+  "author": "nidh-eesh",
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "./dist/style.css"
+  ],
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md",
+    "openapi.yaml"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "style": "./dist/style.css",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./core": {
+      "types": "./dist/core.d.ts",
+      "import": "./dist/core.js",
+      "require": "./dist/core.cjs"
+    },
+    "./transports/http": {
+      "types": "./dist/transports/http.d.ts",
+      "import": "./dist/transports/http.js",
+      "require": "./dist/transports/http.cjs"
+    },
+    "./transports/sentry": {
+      "types": "./dist/transports/sentry.d.ts",
+      "import": "./dist/transports/sentry.js",
+      "require": "./dist/transports/sentry.cjs"
+    },
+    "./capture/display-media": {
+      "types": "./dist/capture/display-media.d.ts",
+      "import": "./dist/capture/display-media.js",
+      "require": "./dist/capture/display-media.cjs"
+    },
+    "./capture/modern-screenshot": {
+      "types": "./dist/capture/modern-screenshot.d.ts",
+      "import": "./dist/capture/modern-screenshot.js",
+      "require": "./dist/capture/modern-screenshot.cjs"
+    },
+    "./style.css": "./dist/style.css",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "lint:api": "redocly lint openapi.yaml",
+    "test:e2e": "vite build --config vite.demo.config.ts && playwright test --project=desktop-chromium --project=mobile-chromium --project=desktop-firefox",
+    "test:e2e:all": "vite build --config vite.demo.config.ts && playwright test",
+    "test:e2e:update": "vite build --config vite.demo.config.ts && playwright test --project=desktop-chromium --project=mobile-chromium --project=desktop-firefox --update-snapshots",
+    "test:e2e:update:all": "vite build --config vite.demo.config.ts && playwright test --update-snapshots",
+    "demo": "vite demo --host 127.0.0.1 --port 4178",
+    "verify": "npm run typecheck && npm run test:coverage && npm run lint:api && npm run build",
+    "check:pack": "npm pack --dry-run",
+    "prepublishOnly": "npm run verify && npm run test:e2e && npm run check:pack"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "modern-screenshot": "^4.7.0",
+    "react": "^18.2.0 || ^19.0.0",
+    "react-dom": "^18.2.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "modern-screenshot": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@redocly/cli": "^2.46.1",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.4",
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitest/coverage-v8": "^4.1.10",
+    "axe-core": "^4.13.0",
+    "jsdom": "^30.0.1",
+    "modern-screenshot": "^4.7.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10"
+  }
+}
