@@ -108,6 +108,50 @@ test("keeps the anonymous tooltip visible inside the scrollable form", async ({
   await expect(tooltip).toBeVisible();
 });
 
+test("keeps a typed draft when a selection drag ends on the backdrop", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Report a bug" }).click();
+
+  const message = page.getByLabel("What happened?");
+  await message.fill("A".repeat(800));
+  const messageBox = await message.boundingBox();
+  expect(messageBox).not.toBeNull();
+
+  await page.mouse.move(
+    messageBox!.x + messageBox!.width / 2,
+    messageBox!.y + messageBox!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(2, 2, { steps: 4 });
+  await page.mouse.up();
+
+  await expect(page.getByRole("dialog", { name: "Report a bug" })).toBeVisible();
+  await expect(message).toHaveValue("A".repeat(800));
+
+  await page.mouse.click(2, 2);
+  await expect(page.getByRole("dialog", { name: "Report a bug" })).toBeHidden();
+});
+
+test("tabs out of the open severity menu without losing focus", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Report a bug" }).click();
+
+  const severity = page.getByRole("combobox", {
+    name: /How much is it in your way\?/,
+  });
+  await severity.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("Tab");
+
+  await expect(page.getByLabel("Steps to reproduce")).toBeFocused();
+  await expect(page.getByRole("listbox")).toBeHidden();
+});
+
 test("supports upload, capture, failure-safe editing, and success", async ({
   page,
 }) => {
@@ -125,7 +169,9 @@ test("supports upload, capture, failure-safe editing, and success", async ({
 
   await page.getByLabel("What happened?").fill("The application did not save.");
   await page.getByRole("button", { name: "Send report" }).click();
-  await expect(page.getByText("Got it — thank you.")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Got it — thank you." }),
+  ).toBeFocused();
 });
 
 test("keeps exact switch and details motion and honors reduced motion", async ({
