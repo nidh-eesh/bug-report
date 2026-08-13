@@ -1,0 +1,273 @@
+openapi: 3.1.0
+info:
+  title: Bug report ingestion API
+  version: 1.0.0
+  license:
+    name: MIT
+    identifier: MIT
+  description: >-
+    Provider-neutral server contract used by
+    @nidh-eesh/bug-report/transports/http. Authentication and retention are
+    deployment-specific.
+security: []
+servers:
+  - url: /
+    description: Current origin; replace this with the receiving service URL.
+paths:
+  /v1/bug-reports:
+    post:
+      operationId: createBugReport
+      summary: Accept a bug report and an optional screenshot
+      tags: [Bug reports]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [report]
+              properties:
+                report:
+                  $ref: "#/components/schemas/BugReport"
+                attachment:
+                  type: string
+                  format: binary
+            encoding:
+              report:
+                contentType: application/json
+              attachment:
+                contentType: image/png, image/jpeg, image/webp
+      responses:
+        "201":
+          description: Report accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BugReportReceipt"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/ServerError"
+components:
+  schemas:
+    BugReport:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - id
+        - submittedAt
+        - anonymous
+        - message
+        - includeTechnicalContext
+      properties:
+        schemaVersion:
+          type: integer
+          const: 1
+        id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        submittedAt:
+          type: string
+          format: date-time
+        anonymous:
+          type: boolean
+        message:
+          type: string
+          minLength: 3
+          maxLength: 10000
+        includeTechnicalContext:
+          type: boolean
+        contact:
+          $ref: "#/components/schemas/Contact"
+        details:
+          $ref: "#/components/schemas/Details"
+        context:
+          $ref: "#/components/schemas/TechnicalContext"
+        attachment:
+          $ref: "#/components/schemas/AttachmentMetadata"
+      allOf:
+        - if:
+            properties:
+              anonymous:
+                const: true
+            required: [anonymous]
+          then:
+            properties:
+              contact: false
+        - if:
+            properties:
+              includeTechnicalContext:
+                const: false
+            required: [includeTechnicalContext]
+          then:
+            properties:
+              context: false
+    Contact:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        email:
+          type: string
+          format: email
+          maxLength: 320
+      required: [email]
+    Details:
+      type: object
+      additionalProperties: false
+      properties:
+        severity:
+          type: string
+          enum: [annoying, workaround, blocking, data]
+        steps:
+          type: string
+          maxLength: 10000
+        expected:
+          type: string
+          maxLength: 5000
+        actual:
+          type: string
+          maxLength: 5000
+    TechnicalContext:
+      type: object
+      additionalProperties: false
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 4096
+        userAgent:
+          type: string
+          maxLength: 1024
+        locale:
+          type: string
+          maxLength: 64
+        appVersion:
+          type: string
+          maxLength: 128
+        viewport:
+          type: object
+          additionalProperties: false
+          required: [width, height]
+          properties:
+            width:
+              type: number
+              minimum: 0
+            height:
+              type: number
+              minimum: 0
+            devicePixelRatio:
+              type: number
+              exclusiveMinimum: 0
+        tags:
+          type: object
+          maxProperties: 100
+          additionalProperties:
+            type: string
+            maxLength: 200
+        extra:
+          type: object
+          maxProperties: 100
+          additionalProperties: true
+    AttachmentMetadata:
+      type: object
+      additionalProperties: false
+      required: [filename, contentType, size, source]
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+        contentType:
+          type: string
+          enum: [image/png, image/jpeg, image/webp]
+        size:
+          type: integer
+          minimum: 1
+          maximum: 10485760
+        source:
+          type: string
+          enum: [upload, capture]
+        width:
+          type: integer
+          minimum: 1
+        height:
+          type: integer
+          minimum: 1
+    BugReportReceipt:
+      type: object
+      additionalProperties: true
+      required: [id, acceptedAt]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 256
+        acceptedAt:
+          type: string
+          format: date-time
+        provider:
+          type: string
+          maxLength: 100
+        metadata:
+          type: object
+          additionalProperties: true
+    ProblemDetails:
+      type: object
+      description: RFC 9457 problem details
+      additionalProperties: true
+      required: [type, title, status]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+  responses:
+    BadRequest:
+      description: Invalid report or multipart body
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    PayloadTooLarge:
+      description: Report or image exceeds server limits
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    RateLimited:
+      description: Too many reports
+      headers:
+        Retry-After:
+          description: Seconds or HTTP date after which the client may retry
+          schema:
+            type: string
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+    ServerError:
+      description: Unexpected ingestion failure
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
