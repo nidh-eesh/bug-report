@@ -187,6 +187,42 @@ describe("BugReportForm", () => {
     expect(screen.queryByText(/That address looks off/)).toBeNull();
   });
 
+  it("validates fields before resolving opted-in host context", async () => {
+    const user = userEvent.setup();
+    const context = vi.fn(async () => {
+      throw new Error("Context is unavailable");
+    });
+    const onError = vi.fn();
+    const onSubmit = vi.fn();
+    render(
+      <BugReportForm
+        context={context}
+        defaultExpanded
+        onError={onError}
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Send report" }));
+
+    expect(
+      screen.getByText("Tell us a little about what you saw first."),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "That address looks off — or turn on anonymous and skip it.",
+      ),
+    ).toBeVisible();
+    expect(context).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText(
+        "We couldn't send your report. Check your connection and try again.",
+      ),
+    ).toBeNull();
+  });
+
   it("uses semantic color overrides, custom copy, and anonymous callbacks", async () => {
     const user = userEvent.setup();
     const onAnonymousChange = vi.fn();

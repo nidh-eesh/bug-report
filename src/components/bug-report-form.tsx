@@ -13,6 +13,7 @@ import {
   BugReportValidationError,
   createBugReport,
   createScreenshotAttachment,
+  validateBugReportInput,
   type BugReport,
   type BugReportContact,
   type BugReportContext,
@@ -368,17 +369,21 @@ export function BugReportForm({
     setPhase("sending");
 
     try {
-      const resolvedContext = includeTechnicalContext
-        ? await resolveContext()
-        : undefined;
-      const report = createBugReport({
+      const input = {
         anonymous,
         message,
         includeTechnicalContext,
         contact: { name, email },
         details: { severity, steps, expected, actual },
-        ...(resolvedContext ? { context: resolvedContext } : {}),
         ...(attachment ? { attachment } : {}),
+      };
+      validateBugReportInput(input);
+      const resolvedContext = includeTechnicalContext
+        ? await resolveContext()
+        : undefined;
+      const report = createBugReport({
+        ...input,
+        ...(resolvedContext ? { context: resolvedContext } : {}),
       });
       const receipt = await onSubmit(report);
       setPhase("success");
