@@ -4,6 +4,7 @@ import {
   useState,
   type CSSProperties,
   type MouseEvent,
+  type PointerEvent,
 } from "react";
 
 import {
@@ -37,6 +38,8 @@ export function BugReportDialog({
   ...formProps
 }: BugReportDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const pointerDownTarget = useRef<EventTarget | null>(null);
+  const pointerUpTarget = useRef<EventTarget | null>(null);
   const title = copy?.title ?? DEFAULT_BUG_REPORT_COPY.title;
   const dialogStyle = createBugReportCssVariables(
     colors,
@@ -54,7 +57,16 @@ export function BugReportDialog({
   }, [open]);
 
   const clickBackdrop = (event: MouseEvent<HTMLDialogElement>) => {
-    if (event.target === event.currentTarget) onOpenChange(false);
+    const pressedOnBackdrop =
+      pointerDownTarget.current === event.currentTarget;
+    const releasedOnBackdrop =
+      pointerUpTarget.current === event.currentTarget;
+    const clickedOnBackdrop = event.target === event.currentTarget;
+    pointerDownTarget.current = null;
+    pointerUpTarget.current = null;
+    if (pressedOnBackdrop && releasedOnBackdrop && clickedOnBackdrop) {
+      onOpenChange(false);
+    }
   };
 
   return (
@@ -68,6 +80,17 @@ export function BugReportDialog({
         onOpenChange(false);
       }}
       onClick={clickBackdrop}
+      onPointerDown={(event: PointerEvent<HTMLDialogElement>) => {
+        pointerDownTarget.current = event.target;
+        pointerUpTarget.current = null;
+      }}
+      onPointerUp={(event: PointerEvent<HTMLDialogElement>) => {
+        pointerUpTarget.current = event.target;
+      }}
+      onPointerCancel={() => {
+        pointerDownTarget.current = null;
+        pointerUpTarget.current = null;
+      }}
       ref={dialogRef}
       style={dialogStyle}
     >

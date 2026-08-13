@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -48,7 +48,9 @@ describe("BugReportDialog", () => {
     expect(cancel.defaultPrevented).toBe(true);
     expect(onOpenChange).toHaveBeenCalledWith(false);
 
-    dialog.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    fireEvent.pointerDown(dialog);
+    fireEvent.pointerUp(dialog);
+    fireEvent.click(dialog);
     expect(onOpenChange).toHaveBeenCalledTimes(2);
 
     rerender(
@@ -59,6 +61,36 @@ describe("BugReportDialog", () => {
       />,
     );
     expect(dialog).not.toHaveAttribute("open");
+  });
+
+  it("only closes for a complete backdrop press and release", () => {
+    const onOpenChange = vi.fn();
+    render(
+      <BugReportDialog onOpenChange={onOpenChange} onSubmit={vi.fn()} open />,
+    );
+
+    const dialog = screen.getByRole("dialog");
+    const panel = dialog.querySelector(".nbr-dialog__panel");
+    if (!panel) throw new Error("Dialog panel was not rendered");
+    const message = screen.getByLabelText("What happened?");
+    fireEvent.change(message, { target: { value: "A draft worth keeping" } });
+
+    fireEvent.pointerDown(panel);
+    fireEvent.pointerUp(dialog);
+    fireEvent.click(dialog);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(message).toHaveValue("A draft worth keeping");
+
+    fireEvent.pointerDown(dialog);
+    fireEvent.pointerUp(panel);
+    fireEvent.click(dialog);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(message).toHaveValue("A draft worth keeping");
+
+    fireEvent.pointerDown(dialog);
+    fireEvent.pointerUp(dialog);
+    fireEvent.click(dialog);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 });
 
