@@ -160,9 +160,77 @@ describe("display-media capture adapter", () => {
       width: 640,
     });
     expect(getDisplayMedia).toHaveBeenCalledWith({ audio: false, video: true });
-    expect(drawImage).toHaveBeenCalledOnce();
+    expect(drawImage).toHaveBeenCalledWith(
+      expect.any(HTMLVideoElement),
+      0,
+      0,
+      640,
+      360,
+    );
     expect(stop).toHaveBeenCalledOnce();
   });
+
+  it.each([
+    ["the default bound", 3840, 2160, undefined, 2048, 1152],
+    ["a configured bound", 7680, 4320, 1024, 1024, 576],
+  ] as const)(
+    "downscales large shared displays before allocating the canvas using %s",
+    async (
+      _description,
+      sourceWidth,
+      sourceHeight,
+      maximumCanvasSize,
+      expectedWidth,
+      expectedHeight,
+    ) => {
+      const stop = vi.fn();
+      const getDisplayMedia = vi.fn(async () => ({
+        getTracks: () => [{ stop }],
+      }));
+      vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+      Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", {
+        configurable: true,
+        value: sourceWidth,
+      });
+      Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", {
+        configurable: true,
+        value: sourceHeight,
+      });
+      const drawImage = vi.fn();
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+        drawImage,
+      } as unknown as CanvasRenderingContext2D);
+      vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
+        (callback) => callback(new Blob(["png"], { type: "image/png" })),
+      );
+      const capture = createDisplayMediaCapture({
+        ...(maximumCanvasSize === undefined ? {} : { maximumCanvasSize }),
+        mediaDevices: { getDisplayMedia } as unknown as MediaDevices,
+      });
+
+      await expect(capture.capture()).resolves.toMatchObject({
+        height: expectedHeight,
+        width: expectedWidth,
+      });
+      expect(drawImage).toHaveBeenCalledWith(
+        expect.any(HTMLVideoElement),
+        0,
+        0,
+        expectedWidth,
+        expectedHeight,
+      );
+      expect(stop).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects an invalid maximum canvas size of %s",
+    (maximumCanvasSize) => {
+      expect(() => createDisplayMediaCapture({ maximumCanvasSize })).toThrow(
+        "maximumCanvasSize must be a finite number greater than or equal to 1",
+      );
+    },
+  );
 
   it("listens for metadata before playback can deliver it", async () => {
     const stop = vi.fn();

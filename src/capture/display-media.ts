@@ -7,6 +7,32 @@ import {
 export interface DisplayMediaCaptureOptions {
   mediaDevices?: MediaDevices;
   filename?: string | (() => string);
+  /** Longest output edge in pixels. Defaults to 2048. */
+  maximumCanvasSize?: number;
+}
+
+const DEFAULT_MAXIMUM_CANVAS_SIZE = 2048;
+
+function resolveMaximumCanvasSize(value: number | undefined): number {
+  const maximumCanvasSize = value ?? DEFAULT_MAXIMUM_CANVAS_SIZE;
+  if (!Number.isFinite(maximumCanvasSize) || maximumCanvasSize < 1) {
+    throw new TypeError(
+      "maximumCanvasSize must be a finite number greater than or equal to 1.",
+    );
+  }
+  return Math.max(1, Math.floor(maximumCanvasSize));
+}
+
+function boundedDimensions(
+  width: number,
+  height: number,
+  maximumCanvasSize: number,
+): { width: number; height: number } {
+  const scale = Math.min(1, maximumCanvasSize / Math.max(width, height));
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
 }
 
 function timestampedFilename(): string {
@@ -57,6 +83,9 @@ function waitForVideoMetadata(
 export function createDisplayMediaCapture(
   options: DisplayMediaCaptureOptions = {},
 ): ScreenshotCaptureProvider {
+  const maximumCanvasSize = resolveMaximumCanvasSize(
+    options.maximumCanvasSize,
+  );
   const getMediaDevices = (): MediaDevices | undefined =>
     options.mediaDevices ??
     (typeof navigator === "undefined" ? undefined : navigator.mediaDevices);
@@ -93,12 +122,17 @@ export function createDisplayMediaCapture(
           throw new Error("The shared screen did not provide a video frame.");
         }
 
+        const dimensions = boundedDimensions(
+          video.videoWidth,
+          video.videoHeight,
+          maximumCanvasSize,
+        );
         const canvas = document.createElement("canvas");
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        canvas.width = dimensions.width;
+        canvas.height = dimensions.height;
         const context = canvas.getContext("2d");
         if (!context) throw new Error("Canvas rendering is unavailable.");
-        context.drawImage(video, 0, 0);
+        context.drawImage(video, 0, 0, dimensions.width, dimensions.height);
         const blob = await canvasToBlob(canvas);
         const filename =
           typeof options.filename === "function"

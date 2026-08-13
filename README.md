@@ -84,10 +84,12 @@ For supported desktop browsers, a dependency-free display-sharing adapter is als
 ```tsx
 import { createDisplayMediaCapture } from "@nidh-eesh/bug-report/capture/display-media";
 
-const capture = createDisplayMediaCapture();
+const capture = createDisplayMediaCapture({
+  maximumCanvasSize: 2048,
+});
 ```
 
-The action is shown only when `getDisplayMedia()` exists. Mobile browsers generally do not expose that API, so file selection remains the mobile baseline. Native shells can implement the small `ScreenshotCaptureProvider` interface and pass their own bridge.
+The action is shown only when `getDisplayMedia()` exists. Shared frames are proportionally downscaled before canvas allocation so their longest side is at most 2048 pixels by default; set `maximumCanvasSize` to another finite value of at least 1 when you need a different quality/memory trade-off. Mobile browsers generally do not expose that API, so file selection remains the mobile baseline. Native shells can implement the small `ScreenshotCaptureProvider` interface and pass their own bridge.
 
 ## Sentry
 
