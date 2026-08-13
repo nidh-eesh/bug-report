@@ -1,8 +1,33 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDisplayMediaCapture } from "../src/capture/display-media";
-import { createModernScreenshotCapture } from "../src/capture/modern-screenshot";
+import {
+  BugReportTransportError as CoreBugReportTransportError,
+  BugReportValidationError,
+} from "../src/core";
+import {
+  createDisplayMediaCapture,
+  ScreenshotCaptureError as DisplayMediaScreenshotCaptureError,
+} from "../src/capture/display-media";
+import {
+  createModernScreenshotCapture,
+  ScreenshotCaptureError as ModernScreenshotCaptureError,
+} from "../src/capture/modern-screenshot";
 import { ScreenshotCaptureError } from "../src/capture/types";
+import {
+  BugReportTransportError as RootBugReportTransportError,
+  BugReportValidationError as RootBugReportValidationError,
+  ScreenshotCaptureError as RootScreenshotCaptureError,
+} from "../src/index";
+
+describe("capture error exports", () => {
+  it("exports the runtime error from the root and both capture entry points", () => {
+    expect(RootScreenshotCaptureError).toBe(ScreenshotCaptureError);
+    expect(DisplayMediaScreenshotCaptureError).toBe(ScreenshotCaptureError);
+    expect(ModernScreenshotCaptureError).toBe(ScreenshotCaptureError);
+    expect(RootBugReportValidationError).toBe(BugReportValidationError);
+    expect(RootBugReportTransportError).toBe(CoreBugReportTransportError);
+  });
+});
 
 describe("modern-screenshot capture adapter", () => {
   it("captures only the current viewport at a bounded pixel ratio", async () => {
@@ -32,9 +57,9 @@ describe("modern-screenshot capture adapter", () => {
 
     expect(result).toMatchObject({
       filename: expect.stringMatching(/^bug-report-.*\.png$/),
-      height: 844,
+      height: 1688,
       source: "capture",
-      width: 390,
+      width: 780,
     });
     expect(domToBlob).toHaveBeenCalledWith(
       root,
@@ -45,6 +70,37 @@ describe("modern-screenshot capture adapter", () => {
         width: 390,
       }),
     );
+  });
+
+  it("reports scaled dimensions after the maximum canvas size clamps them", async () => {
+    const domToBlob = vi.fn(
+      async () => new Blob(["png"], { type: "image/png" }),
+    );
+    const root = document.createElement("main");
+    document.body.append(root);
+    Object.defineProperty(window, "devicePixelRatio", {
+      configurable: true,
+      value: 2,
+    });
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 3_000,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 2_000,
+    });
+
+    const capture = createModernScreenshotCapture({
+      domToBlob,
+      maximumCanvasSize: 4_096,
+      target: root,
+    });
+
+    await expect(capture.capture()).resolves.toMatchObject({
+      height: 2_730,
+      width: 4_096,
+    });
   });
 
   it("excludes the bug-report UI and host-selected nodes", async () => {
@@ -272,6 +328,49 @@ describe("display-media capture adapter", () => {
     expect(stop).toHaveBeenCalledOnce();
   });
 
+  it("removes metadata listeners immediately when playback fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const stop = vi.fn();
+      const getDisplayMedia = vi.fn(async () => ({
+        getTracks: () => [{ stop }],
+      }));
+      Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", {
+        configurable: true,
+        value: 0,
+      });
+      Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", {
+        configurable: true,
+        value: 0,
+      });
+      vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(
+        new Error("playback failed"),
+      );
+      const removeEventListener = vi.spyOn(
+        HTMLVideoElement.prototype,
+        "removeEventListener",
+      );
+      const capture = createDisplayMediaCapture({
+        mediaDevices: { getDisplayMedia } as unknown as MediaDevices,
+      });
+
+      await expect(capture.capture()).rejects.toThrow("could not be captured");
+
+      expect(removeEventListener).toHaveBeenCalledWith(
+        "loadedmetadata",
+        expect.any(Function),
+      );
+      expect(removeEventListener).toHaveBeenCalledWith(
+        "error",
+        expect.any(Function),
+      );
+      expect(stop).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("turns cancellation and unsupported capture into useful errors", async () => {
     const unsupported = createDisplayMediaCapture({
       mediaDevices: {} as MediaDevices,
@@ -280,15 +379,49 @@ describe("display-media capture adapter", () => {
       "Screen capture is unavailable",
     );
 
-    const cancelled = createDisplayMediaCapture({
+    for (const name of ["NotAllowedError", "AbortError"] as const) {
+      const cancelled = createDisplayMediaCapture({
+        mediaDevices: {
+          getDisplayMedia: vi.fn(async () => {
+            throw new DOMException("cancelled", name);
+          }),
+        } as unknown as MediaDevices,
+      });
+      await expect(cancelled.capture()).rejects.toThrow(
+        "may have been cancelled or blocked",
+      );
+      await expect(cancelled.capture()).rejects.toMatchObject({
+        cause: expect.objectContaining({ name }),
+        name: "ScreenshotCaptureError",
+      });
+    }
+  });
+
+  it("preserves validation and capture errors from the underlying adapter", async () => {
+    const validationError = new BugReportValidationError([
+      {
+        code: "invalid",
+        field: "attachment",
+        message: "invalid attachment",
+      },
+    ]);
+    const getDisplayMedia = vi.fn(async () => {
+      throw validationError;
+    });
+    const capture = createDisplayMediaCapture({
+      mediaDevices: { getDisplayMedia } as unknown as MediaDevices,
+    });
+
+    await expect(capture.capture()).rejects.toBe(validationError);
+
+    const original = new ScreenshotCaptureError("already normalized");
+    const existingErrorCapture = createDisplayMediaCapture({
       mediaDevices: {
         getDisplayMedia: vi.fn(async () => {
-          throw new DOMException("cancelled", "NotAllowedError");
+          throw original;
         }),
       } as unknown as MediaDevices,
     });
-    await expect(cancelled.capture()).rejects.toThrow(
-      "may have been cancelled or blocked",
-    );
+    await expect(existingErrorCapture.capture()).rejects.toBe(original);
   });
 });

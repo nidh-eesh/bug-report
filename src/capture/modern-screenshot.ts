@@ -52,6 +52,43 @@ function matchesAny(element: Element, selectors: readonly string[]): boolean {
   });
 }
 
+function renderedDimensions(
+  width: number,
+  height: number,
+  scale: number,
+  maximumCanvasSize: number,
+): { width: number; height: number } {
+  // modern-screenshot allocates the canvas from scaled CSS dimensions, then
+  // proportionally clamps the longest edge. Keep attachment metadata aligned
+  // with those actual PNG pixel dimensions rather than the CSS viewport.
+  let renderedWidth = Math.max(1, Math.floor(width * scale));
+  let renderedHeight = Math.max(1, Math.floor(height * scale));
+  const maximum = Number.isFinite(maximumCanvasSize)
+    ? Math.floor(maximumCanvasSize)
+    : 0;
+
+  if (
+    maximum > 0 &&
+    (renderedWidth > maximum || renderedHeight > maximum)
+  ) {
+    if (renderedWidth > renderedHeight) {
+      renderedHeight = Math.max(
+        1,
+        Math.floor((renderedHeight * maximum) / renderedWidth),
+      );
+      renderedWidth = maximum;
+    } else {
+      renderedWidth = Math.max(
+        1,
+        Math.floor((renderedWidth * maximum) / renderedHeight),
+      );
+      renderedHeight = maximum;
+    }
+  }
+
+  return { width: renderedWidth, height: renderedHeight };
+}
+
 export function createModernScreenshotCapture(
   options: ModernScreenshotCaptureOptions = {},
 ): ScreenshotCaptureProvider {
@@ -78,6 +115,13 @@ export function createModernScreenshotCapture(
         1,
         Math.min(window.devicePixelRatio || 1, options.maxScale ?? 2),
       );
+      const maximumCanvasSize = options.maximumCanvasSize ?? 4096;
+      const dimensions = renderedDimensions(
+        width,
+        height,
+        scale,
+        maximumCanvasSize,
+      );
       const excludedSelectors = [
         "[data-bug-report-exclude]",
         ...(options.exclude ?? []),
@@ -91,7 +135,7 @@ export function createModernScreenshotCapture(
           width,
           height,
           scale,
-          maximumCanvasSize: options.maximumCanvasSize ?? 4096,
+          maximumCanvasSize,
           filter: (node) =>
             !(node instanceof Element) || !matchesAny(node, excludedSelectors),
           features: { restoreScrollPosition: true },
@@ -110,8 +154,8 @@ export function createModernScreenshotCapture(
         return createScreenshotAttachment(blob, {
           filename,
           source: "capture",
-          width,
-          height,
+          width: dimensions.width,
+          height: dimensions.height,
         });
       } catch (cause) {
         if (cause instanceof ScreenshotCaptureError) throw cause;
@@ -125,3 +169,4 @@ export function createModernScreenshotCapture(
 }
 
 export type { ScreenshotCaptureProvider } from "./types.js";
+export { ScreenshotCaptureError } from "./types.js";

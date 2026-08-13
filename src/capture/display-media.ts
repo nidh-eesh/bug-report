@@ -1,4 +1,7 @@
-import { createScreenshotAttachment } from "../core.js";
+import {
+  BugReportValidationError,
+  createScreenshotAttachment,
+} from "../core.js";
 import {
   ScreenshotCaptureError,
   type ScreenshotCaptureProvider,
@@ -48,19 +51,28 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
   });
 }
 
+interface MetadataWait {
+  promise: Promise<void>;
+  cancel(): void;
+}
+
 function waitForVideoMetadata(
   video: HTMLVideoElement,
   timeoutMs = 5_000,
-): Promise<void> {
+): MetadataWait {
   if (
     video.readyState >= HTMLMediaElement.HAVE_METADATA ||
     (video.videoWidth > 0 && video.videoHeight > 0)
   ) {
-    return Promise.resolve();
+    return { promise: Promise.resolve(), cancel() {} };
   }
 
-  return new Promise((resolve, reject) => {
+  let cancel = () => {};
+  const promise = new Promise<void>((resolve, reject) => {
+    let settled = false;
     const finish = (error?: unknown) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeoutId);
       video.removeEventListener("loadedmetadata", handleMetadata);
       video.removeEventListener("error", handleError);
@@ -77,7 +89,10 @@ function waitForVideoMetadata(
 
     video.addEventListener("loadedmetadata", handleMetadata, { once: true });
     video.addEventListener("error", handleError, { once: true });
+    cancel = () => finish();
   });
+
+  return { promise, cancel: () => cancel() };
 }
 
 export function createDisplayMediaCapture(
@@ -116,8 +131,12 @@ export function createDisplayMediaCapture(
         // Register the metadata listener before playback. Some browsers deliver
         // `loadedmetadata` while `play()` is resolving, so listening afterward
         // can miss the event and leave capture pending indefinitely.
-        const metadataReady = waitForVideoMetadata(video);
-        await Promise.all([metadataReady, video.play()]);
+        const metadataWait = waitForVideoMetadata(video);
+        try {
+          await Promise.all([metadataWait.promise, video.play()]);
+        } finally {
+          metadataWait.cancel();
+        }
         if (!video.videoWidth || !video.videoHeight) {
           throw new Error("The shared screen did not provide a video frame.");
         }
@@ -145,6 +164,12 @@ export function createDisplayMediaCapture(
           height: canvas.height,
         });
       } catch (cause) {
+        if (
+          cause instanceof BugReportValidationError ||
+          cause instanceof ScreenshotCaptureError
+        ) {
+          throw cause;
+        }
         throw new ScreenshotCaptureError(
           "The screen could not be captured. It may have been cancelled or blocked.",
           cause,
@@ -157,3 +182,4 @@ export function createDisplayMediaCapture(
 }
 
 export type { ScreenshotCaptureProvider } from "./types.js";
+export { ScreenshotCaptureError } from "./types.js";
