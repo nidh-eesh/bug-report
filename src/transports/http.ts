@@ -12,7 +12,11 @@ export interface HttpTransportOptions {
   headers?: HeadersInit | (() => HeadersInit | Promise<HeadersInit>);
   credentials?: RequestCredentials;
   signal?: AbortSignal;
+  /** Maximum time to wait for the request. Defaults to 30 seconds. */
+  timeoutMs?: number;
 }
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 interface ProblemDetails {
   type?: string;
@@ -78,6 +82,93 @@ function parseRetryAfter(value: string | null): number | undefined {
   return Math.max(0, date - Date.now());
 }
 
+function resolveTimeoutMs(value: number | undefined): number {
+  const timeoutMs = value ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+    throw new TypeError(
+      "createHttpTransport timeoutMs must be a finite number greater than or equal to 0.",
+    );
+  }
+  return timeoutMs;
+}
+
+function timeoutReason(): Error | DOMException {
+  if (typeof DOMException === "function") {
+    return new DOMException("The bug report request timed out.", "TimeoutError");
+  }
+  const error = new Error("The bug report request timed out.");
+  error.name = "TimeoutError";
+  return error;
+}
+
+interface ComposedRequestSignal {
+  signal: AbortSignal;
+  cleanup: () => void;
+}
+
+function waitForOperation<T>(
+  operation: PromiseLike<T> | T,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(
+      signal.reason ?? new Error("The bug report request was aborted."),
+    );
+  }
+
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      cleanup();
+      reject(signal.reason ?? new Error("The bug report request was aborted."));
+    };
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(operation).then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (cause) => {
+        cleanup();
+        reject(cause);
+      },
+    );
+  });
+}
+
+function composeRequestSignal(
+  callerSignal: AbortSignal | undefined,
+  timeoutMs: number,
+): ComposedRequestSignal {
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let cleanedUp = false;
+  const onCallerAbort = () => controller.abort(callerSignal?.reason);
+
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort(callerSignal.reason);
+    } else {
+      callerSignal.addEventListener("abort", onCallerAbort, { once: true });
+    }
+  }
+
+  if (!controller.signal.aborted) {
+    timeoutId = setTimeout(() => controller.abort(timeoutReason()), timeoutMs);
+  }
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      callerSignal?.removeEventListener("abort", onCallerAbort);
+    },
+  };
+}
+
 async function parseProblem(response: Response): Promise<ProblemDetails> {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("json")) {
@@ -98,9 +189,15 @@ async function parseProblem(response: Response): Promise<ProblemDetails> {
 export function createHttpTransport(
   options: HttpTransportOptions,
 ): BugReportSubmit {
-  if (!String(options.endpoint)) {
+  const endpoint: unknown = options.endpoint;
+  if (
+    endpoint === null ||
+    endpoint === undefined ||
+    (typeof endpoint === "string" && endpoint.trim().length === 0)
+  ) {
     throw new TypeError("createHttpTransport requires an endpoint.");
   }
+  const timeoutMs = resolveTimeoutMs(options.timeoutMs);
 
   return async (report: BugReport): Promise<BugReportReceipt> => {
     const fetchImplementation = options.fetch ?? globalThis.fetch;
@@ -127,63 +224,99 @@ export function createHttpTransport(
       );
     }
 
-    let response: Response;
+    const requestSignal = composeRequestSignal(options.signal, timeoutMs);
     try {
-      const headers =
-        typeof options.headers === "function"
-          ? await options.headers()
-          : options.headers;
-      response = await fetchImplementation(options.endpoint, {
-        method: "POST",
-        body: data,
-        ...(headers ? { headers } : {}),
-        ...(options.credentials ? { credentials: options.credentials } : {}),
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
-    } catch (cause) {
-      if (cause instanceof BugReportTransportError) throw cause;
-      throw new BugReportTransportError(
-        "The bug report could not reach the server.",
-        { code: "NETWORK_ERROR", retryable: true, cause },
-      );
-    }
-
-    if (!response.ok) {
-      const problem = await parseProblem(response);
-      const retryAfterMs = parseRetryAfter(response.headers.get("retry-after"));
-      throw new BugReportTransportError(
-        problem.detail ??
-          problem.title ??
-          `The bug report request failed with status ${response.status}.`,
-        {
-          code: codeForStatus(response.status),
-          status: response.status,
-          retryable: response.status === 429 || response.status >= 500,
-          ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
-        },
-      );
-    }
-
-    if (response.status === 204) {
-      return { provider: "http" };
-    }
-
-    try {
-      const receipt: unknown = await response.json();
-      if (!isBugReportReceipt(receipt)) {
-        throw new TypeError("The response does not match BugReportReceipt.");
+      let response: Response;
+      try {
+        const headers =
+          typeof options.headers === "function"
+            ? await waitForOperation(options.headers(), requestSignal.signal)
+            : options.headers;
+        response = await waitForOperation(
+          fetchImplementation(options.endpoint, {
+            method: "POST",
+            body: data,
+            ...(headers ? { headers } : {}),
+            ...(options.credentials
+              ? { credentials: options.credentials }
+              : {}),
+            signal: requestSignal.signal,
+          }),
+          requestSignal.signal,
+        );
+      } catch (cause) {
+        if (cause instanceof BugReportTransportError) throw cause;
+        throw new BugReportTransportError(
+          "The bug report could not reach the server.",
+          {
+            code: "NETWORK_ERROR",
+            retryable: true,
+            cause,
+          },
+        );
       }
-      return { ...receipt, provider: receipt.provider ?? "http" };
-    } catch (cause) {
-      throw new BugReportTransportError(
-        "The server accepted the bug report but returned an invalid receipt.",
-        {
-          code: "INVALID_RESPONSE",
-          status: response.status,
-          retryable: false,
-          cause,
-        },
-      );
+
+      if (!response.ok) {
+        let problem: ProblemDetails;
+        try {
+          problem = await waitForOperation(
+            parseProblem(response),
+            requestSignal.signal,
+          );
+        } catch (cause) {
+          throw new BugReportTransportError(
+            "The bug report could not reach the server.",
+            { code: "NETWORK_ERROR", retryable: true, cause },
+          );
+        }
+        const retryAfterMs = parseRetryAfter(
+          response.headers.get("retry-after"),
+        );
+        throw new BugReportTransportError(
+          problem.detail ??
+            problem.title ??
+            `The bug report request failed with status ${response.status}.`,
+          {
+            code: codeForStatus(response.status),
+            status: response.status,
+            retryable: response.status === 429 || response.status >= 500,
+            ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+          },
+        );
+      }
+
+      if (response.status === 204) {
+        return { provider: "http" };
+      }
+
+      try {
+        const receipt: unknown = await waitForOperation(
+          response.json(),
+          requestSignal.signal,
+        );
+        if (!isBugReportReceipt(receipt)) {
+          throw new TypeError("The response does not match BugReportReceipt.");
+        }
+        return { ...receipt, provider: receipt.provider ?? "http" };
+      } catch (cause) {
+        if (requestSignal.signal.aborted) {
+          throw new BugReportTransportError(
+            "The bug report could not reach the server.",
+            { code: "NETWORK_ERROR", retryable: true, cause },
+          );
+        }
+        throw new BugReportTransportError(
+          "The server accepted the bug report but returned an invalid receipt.",
+          {
+            code: "INVALID_RESPONSE",
+            status: response.status,
+            retryable: false,
+            cause,
+          },
+        );
+      }
+    } finally {
+      requestSignal.cleanup();
     }
   };
 }

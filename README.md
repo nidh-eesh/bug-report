@@ -54,6 +54,8 @@ The fixed trigger uses safe-area insets on mobile and can be placed at `bottom-r
 
 Name and email are prefilled from `reporter` and remain editable. Turning on anonymous mode hides those two inputs and omits contact data from the submitted report. Turning it off restores the values. The message, detailed fields, screenshot, and opted-in technical context remain unchanged.
 
+Technical context is not included by default. When the reporter enables the technical-context checkbox, the supplied `context` (including an async context function) is evaluated at submission time; browser context collection is enabled by default and can be disabled with `collectBrowserContext={false}`.
+
 `redactBugReport(report)` is exported for applications that later choose to add a separate redaction policy. The component and built-in transports never call it automatically.
 
 ## Screenshots on desktop and mobile
@@ -110,6 +112,8 @@ const submitBugReport = createSentryTransport({
 
 Screenshot blobs become Sentry event attachments. Replay inclusion is a host setting and is not described to the reporter by the UI.
 
+The adapter forwards consented context through Sentry-compatible tags and `captureContext`, and always adds the package report ID as the searchable `bug_report_id` tag. It does not use that package ID as Sentry's `associatedEventId`. `ScreenshotCaptureError` is exported from the package root and both capture entry points for callers that need to distinguish capture cancellation or failure.
+
 Canvas replay is separate from feedback delivery and should stay in the host's Sentry client configuration:
 
 ```ts
@@ -152,6 +156,8 @@ The supplied HTTP transport uses `multipart/form-data` with:
 
 - `report`: an `application/json` file containing the versioned report and attachment metadata;
 - `attachment`: the optional image bytes.
+
+Requests use a 30-second timeout by default and compose it with an optional caller `signal`; pass `timeoutMs` to change the timeout. Aborts and timeouts are reported as retryable `NETWORK_ERROR` transport errors.
 
 See [`openapi.yaml`](./openapi.yaml) for the server contract.
 

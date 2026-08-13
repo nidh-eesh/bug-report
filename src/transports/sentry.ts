@@ -18,6 +18,12 @@ export interface SentryAttachment {
 export interface SentryFeedbackHint {
   includeReplay?: boolean;
   attachments?: SentryAttachment[];
+  /** Structural subset of Sentry's EventHint.captureContext. */
+  captureContext?: SentryCaptureContext;
+}
+
+export interface SentryCaptureContext {
+  extra?: Record<string, unknown>;
 }
 
 export type SentrySendFeedback = (
@@ -59,6 +65,21 @@ function eventIdFromResult(result: unknown): string | undefined {
   return undefined;
 }
 
+function buildCaptureContext(report: BugReport): SentryCaptureContext {
+  const context = report.context;
+  const extra: Record<string, unknown> = {
+    ...(context?.extra ?? {}),
+    reportId: report.id,
+    submittedAt: report.submittedAt,
+    ...(context?.userAgent ? { userAgent: context.userAgent } : {}),
+    ...(context?.locale ? { locale: context.locale } : {}),
+    ...(context?.appVersion ? { appVersion: context.appVersion } : {}),
+    ...(context?.viewport ? { viewport: context.viewport } : {}),
+  };
+
+  return { extra };
+}
+
 /**
  * Adapts the package report to Sentry's `sendFeedback` API without importing
  * an SDK. Pass `Sentry.sendFeedback` from the host.
@@ -77,6 +98,9 @@ export function createSentryTransport(
       ...(report.details?.severity
         ? { severity: report.details.severity }
         : {}),
+      // This is the package report ID, not a Sentry event ID. Keep it as a
+      // searchable tag instead of passing it as associatedEventId.
+      bug_report_id: report.id,
     };
     const params: SentryFeedbackParams = {
       message: formatMessage(report),
@@ -91,6 +115,7 @@ export function createSentryTransport(
       ...(options.includeReplay !== undefined
         ? { includeReplay: options.includeReplay }
         : {}),
+      captureContext: buildCaptureContext(report),
     };
     if (report.attachment) {
       hint.attachments = [

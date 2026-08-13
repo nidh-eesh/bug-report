@@ -13,6 +13,15 @@ import type {
 } from "../src/transports/sentry";
 
 describe("HTTP transport", () => {
+  it.each([undefined, null, "", "  \t  "])(
+    "rejects a missing or blank endpoint at construction (%s)",
+    (endpoint) => {
+      expect(() =>
+        createHttpTransport({ endpoint: endpoint as never }),
+      ).toThrow(TypeError);
+    },
+  );
+
   it("posts versioned multipart data and returns the server receipt", async () => {
     const fetchImplementation = vi.fn(async (_url, init) => {
       const body = init?.body as FormData;
@@ -129,9 +138,138 @@ describe("HTTP transport", () => {
     expect(fetchImplementation.mock.calls[0]?.[1]).toMatchObject({
       credentials: "include",
       headers: { Authorization: "Bearer test" },
-      signal: controller.signal,
     });
+    const requestSignal = fetchImplementation.mock.calls[0]?.[1]?.signal;
+    expect(requestSignal).toBeInstanceOf(AbortSignal);
+    expect(requestSignal).not.toBe(controller.signal);
   });
+
+  it("composes caller cancellation with the request timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const caller = new AbortController();
+      let requestSignal: AbortSignal | undefined;
+      const fetchImplementation = vi.fn(
+        (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            requestSignal = init?.signal ?? undefined;
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(init.signal?.reason),
+              { once: true },
+            );
+          }),
+      );
+      const transport = createHttpTransport({
+        endpoint: "/v1/bug-reports",
+        fetch: fetchImplementation as typeof fetch,
+        signal: caller.signal,
+        timeoutMs: 30_000,
+      });
+
+      const pending = transport(
+        createBugReport({
+          anonymous: true,
+          includeTechnicalContext: false,
+          message: "The editor failed",
+        }),
+      );
+      const rejection = expect(pending).rejects.toMatchObject({
+        code: "NETWORK_ERROR",
+        retryable: true,
+      });
+      expect(requestSignal).toBeDefined();
+      expect(requestSignal).not.toBe(caller.signal);
+
+      caller.abort();
+
+      await rejection;
+      expect(requestSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("aborts and normalizes a request that exceeds the 30-second default timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      let requestSignal: AbortSignal | undefined;
+      const fetchImplementation = vi.fn(
+        (_input: RequestInfo | URL, init?: RequestInit) =>
+          new Promise<Response>((_resolve, reject) => {
+            requestSignal = init?.signal ?? undefined;
+            init?.signal?.addEventListener(
+              "abort",
+              () => reject(init.signal?.reason),
+              { once: true },
+            );
+          }),
+      );
+      const transport = createHttpTransport({
+        endpoint: "/v1/bug-reports",
+        fetch: fetchImplementation as typeof fetch,
+      });
+
+      const pending = transport(
+        createBugReport({
+          anonymous: true,
+          includeTechnicalContext: false,
+          message: "The editor failed",
+        }),
+      );
+      const rejection = expect(pending).rejects.toMatchObject({
+        code: "NETWORK_ERROR",
+        retryable: true,
+      });
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      await rejection;
+      expect(requestSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["headers", "receipt"] as const)(
+    "keeps the timeout active while reading %s",
+    async (phase) => {
+      vi.useFakeTimers();
+      try {
+        const never = new Promise<never>(() => {});
+        const transport = createHttpTransport({
+          endpoint: "/v1/bug-reports",
+          fetch:
+            phase === "receipt"
+              ? (vi.fn(async () => ({
+                  headers: new Headers({ "content-type": "application/json" }),
+                  json: () => never,
+                  ok: true,
+                  status: 201,
+                })) as unknown as typeof fetch)
+              : (vi.fn() as unknown as typeof fetch),
+          ...(phase === "headers" ? { headers: () => never } : {}),
+          timeoutMs: 25,
+        });
+
+        const pending = transport(
+          createBugReport({
+            anonymous: true,
+            includeTechnicalContext: false,
+            message: "The editor failed",
+          }),
+        );
+        const rejection = expect(pending).rejects.toMatchObject({
+          code: "NETWORK_ERROR",
+          retryable: true,
+        });
+        await vi.advanceTimersByTimeAsync(25);
+
+        await rejection;
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
 
   it("normalizes network, status, and invalid response failures", async () => {
     const report = createBugReport({
@@ -280,8 +418,13 @@ describe("Sentry transport", () => {
       ),
       contact: { email: "ada@example.com", name: "Ada Lovelace" },
       context: {
+        appVersion: "2.4.0",
+        extra: { routeKind: "editor" },
+        locale: "en-GB",
         tags: { surface: "toolbar" },
+        userAgent: "Test Browser",
         url: "https://example.test/editor",
+        viewport: { devicePixelRatio: 2, height: 844, width: 390 },
       },
       details: {
         actual: "Nothing happened",
@@ -291,6 +434,9 @@ describe("Sentry transport", () => {
       },
       includeTechnicalContext: true,
       message: "Saving failed.",
+    }, {
+      id: "report-sentry-1",
+      now: () => new Date("2026-08-13T00:00:00.000Z"),
     });
 
     await expect(transport(report)).resolves.toEqual({
@@ -302,11 +448,28 @@ describe("Sentry transport", () => {
       email: "ada@example.com",
       name: "Ada Lovelace",
       tags: {
+        bug_report_id: "report-sentry-1",
         product: "editor",
         severity: "blocking",
         surface: "toolbar",
       },
       url: "https://example.test/editor",
+    });
+    expect(sendFeedback.mock.calls[0]?.[0]).not.toHaveProperty(
+      "associatedEventId",
+    );
+    expect(sendFeedback.mock.calls[0]?.[1]).toMatchObject({
+      captureContext: {
+        extra: {
+          appVersion: "2.4.0",
+          locale: "en-GB",
+          reportId: "report-sentry-1",
+          routeKind: "editor",
+          submittedAt: "2026-08-13T00:00:00.000Z",
+          userAgent: "Test Browser",
+          viewport: { devicePixelRatio: 2, height: 844, width: 390 },
+        },
+      },
     });
     expect(sendFeedback.mock.calls[0]?.[0].message).toContain("Press Save");
     expect(sendFeedback.mock.calls[0]?.[1]).toMatchObject({
@@ -340,7 +503,7 @@ describe("Sentry transport", () => {
     expect(sendFeedback.mock.calls[0]?.[0]).not.toHaveProperty("name");
   });
 
-  it("supports object event IDs, custom sources, and an empty hint", async () => {
+  it("supports object event IDs, custom sources, and capture context", async () => {
     const sendFeedback = vi.fn(
       async (_params: SentryFeedbackParams, _hint?: SentryFeedbackHint) => ({
         eventId: "event-object-1",
@@ -353,16 +516,23 @@ describe("Sentry transport", () => {
 
     await expect(
       transport(
-        createBugReport({
-          anonymous: true,
-          includeTechnicalContext: false,
-          message: "The button failed",
-        }),
+        createBugReport(
+          {
+            anonymous: true,
+            includeTechnicalContext: false,
+            message: "The button failed",
+          },
+          { id: "report-object-1" },
+        ),
       ),
     ).resolves.toEqual({ id: "event-object-1", provider: "sentry" });
     expect(sendFeedback).toHaveBeenCalledWith(
       expect.objectContaining({ source: "custom-widget" }),
-      undefined,
+      expect.objectContaining({
+        captureContext: {
+          extra: expect.objectContaining({ reportId: "report-object-1" }),
+        },
+      }),
     );
   });
 
