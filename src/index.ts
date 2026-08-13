@@ -5,6 +5,7 @@ export {
   BugReportValidationError,
   createBugReport,
   createScreenshotAttachment,
+  formatBytes,
   redactBugReport,
   serializeBugReport,
   validateBugReportInput,
@@ -47,4 +48,7 @@ export type {
   BugReportWidgetPosition,
   BugReportWidgetProps,
 } from "./components/bug-report-dialog.js";
+export {
+  ScreenshotCaptureError,
+} from "./capture/types.js";
 export type { ScreenshotCaptureProvider } from "./capture/types.js";

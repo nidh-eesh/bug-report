@@ -5,12 +5,19 @@ import {
   BugReportValidationError,
   createBugReport,
   createScreenshotAttachment,
+  formatBytes,
   redactBugReport,
   serializeBugReport,
   validateBugReportInput,
 } from "../src/core";
 
 describe("bug-report core", () => {
+  it("formats byte limits downward so messages never overpromise", () => {
+    expect(formatBytes(1_500)).toBe("1 KB");
+    expect(formatBytes(2_500_000)).toBe("2.3 MB");
+    expect(formatBytes(10 * 1024 * 1024)).toBe("10 MB");
+  });
+
   it("creates a versioned report and trims human-entered values", () => {
     const report = createBugReport(
       {

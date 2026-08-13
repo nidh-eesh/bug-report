@@ -1,3 +1,5 @@
+import { shareErrorConstructor } from "./shared-errors.js";
+
 export const BUG_REPORT_SCHEMA_VERSION = 1 as const;
 
 export const BUG_REPORT_SEVERITIES = [
@@ -94,7 +96,7 @@ export interface BugReportValidationIssue {
   message: string;
 }
 
-export class BugReportValidationError extends Error {
+class BugReportValidationErrorImplementation extends Error {
   readonly issues: readonly BugReportValidationIssue[];
 
   constructor(issues: readonly BugReportValidationIssue[]) {
@@ -103,6 +105,14 @@ export class BugReportValidationError extends Error {
     this.issues = issues;
   }
 }
+
+export const BugReportValidationError = shareErrorConstructor(
+  "BugReportValidationError",
+  BugReportValidationErrorImplementation,
+);
+export type BugReportValidationError = InstanceType<
+  typeof BugReportValidationError
+>;
 
 export type BugReportTransportErrorCode =
   | "BAD_REQUEST"
@@ -124,7 +134,7 @@ export interface BugReportTransportErrorOptions {
   cause?: unknown;
 }
 
-export class BugReportTransportError extends Error {
+class BugReportTransportErrorImplementation extends Error {
   readonly code: BugReportTransportErrorCode;
   readonly status?: number;
   readonly retryable: boolean;
@@ -144,6 +154,14 @@ export class BugReportTransportError extends Error {
   }
 }
 
+export const BugReportTransportError = shareErrorConstructor(
+  "BugReportTransportError",
+  BugReportTransportErrorImplementation,
+);
+export type BugReportTransportError = InstanceType<
+  typeof BugReportTransportError
+>;
+
 export interface CreateBugReportOptions {
   id?: string;
   now?: () => Date;
@@ -159,16 +177,28 @@ export interface CreateScreenshotAttachmentOptions {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const DEFAULT_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const BYTES_PER_KILOBYTE = 1024;
+const BYTES_PER_MEGABYTE = BYTES_PER_KILOBYTE * 1024;
 const SUPPORTED_IMAGE_TYPES = new Set([
   "image/png",
   "image/jpeg",
   "image/webp",
 ]);
 
-function readableByteLimit(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
-  return `${Math.floor(bytes / 1024 / 1024)} MB`;
+/**
+ * Formats a byte limit for user-facing validation messages.
+ *
+ * Limits are rounded down so the text never advertises more bytes than the
+ * validator accepts (for example, 1,500 bytes is shown as 1 KB).
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes < BYTES_PER_KILOBYTE) return `${Math.floor(bytes)} B`;
+  if (bytes < BYTES_PER_MEGABYTE) {
+    return `${Math.floor(bytes / BYTES_PER_KILOBYTE)} KB`;
+  }
+  const megabytes =
+    Math.floor((bytes / BYTES_PER_MEGABYTE) * 10) / 10;
+  return `${Number.isInteger(megabytes) ? megabytes : megabytes.toFixed(1)} MB`;
 }
 
 function optionalTrimmed(value: string | undefined): string | undefined {
@@ -278,7 +308,7 @@ export function validateBugReportInput(input: BugReportInput): void {
       issues.push({
         field: "attachment",
         code: "too_large",
-        message: "The screenshot must be 10 MB or smaller.",
+        message: `The screenshot must be ${formatBytes(DEFAULT_MAX_ATTACHMENT_BYTES)} or smaller.`,
       });
     }
     if (input.attachment.size === 0) {
@@ -359,7 +389,7 @@ export function createScreenshotAttachment(
     issues.push({
       field: "attachment",
       code: "too_large",
-      message: `The screenshot must be ${readableByteLimit(maxBytes)} or smaller.`,
+      message: `The screenshot must be ${formatBytes(maxBytes)} or smaller.`,
     });
   }
   if (issues.length > 0) throw new BugReportValidationError(issues);

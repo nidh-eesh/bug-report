@@ -9,6 +9,13 @@
     "rootDir": "./src",
     "types": []
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "include": [
+    "src/index.ts",
+    "src/core.ts",
+    "src/transports/http.ts",
+    "src/transports/sentry.ts",
+    "src/capture/display-media.ts",
+    "src/capture/modern-screenshot.ts"
+  ],
   "exclude": ["tests", "demo", "e2e", "dist"]
 }
