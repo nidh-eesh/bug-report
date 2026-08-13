@@ -14,9 +14,10 @@ export const DEFAULT_SEVERITY_OPTIONS: readonly {
 ];
 
 export interface SeveritySelectProps {
-  value: BugReportSeverity;
+  value: BugReportSeverity | undefined;
   onChange(value: BugReportSeverity): void;
   label: string;
+  placeholder?: string;
   options?: typeof DEFAULT_SEVERITY_OPTIONS;
   disabled?: boolean;
 }
@@ -25,6 +26,7 @@ export function SeveritySelect({
   value,
   onChange,
   label,
+  placeholder = "Choose a severity",
   options = DEFAULT_SEVERITY_OPTIONS,
   disabled = false,
 }: SeveritySelectProps) {
@@ -40,8 +42,9 @@ export function SeveritySelect({
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const listboxId = useId();
   const labelId = useId();
-  const selected =
-    options.find((option) => option.value === value) ?? options[0];
+  const valueId = useId();
+  const selected = options.find((option) => option.value === value);
+  const selectedLabel = selected?.label ?? placeholder;
 
   useEffect(() => {
     if (!open) return;
@@ -108,12 +111,10 @@ export function SeveritySelect({
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       choose(index);
-    } else if (event.key === "Escape" || event.key === "Tab") {
+    } else if (event.key === "Escape") {
       setOpen(false);
-      if (event.key === "Escape") {
-        event.preventDefault();
-        buttonRef.current?.focus();
-      }
+      event.preventDefault();
+      buttonRef.current?.focus();
     }
   };
 
@@ -126,7 +127,7 @@ export function SeveritySelect({
         aria-controls={listboxId}
         aria-expanded={open}
         aria-haspopup="listbox"
-        aria-labelledby={labelId}
+        aria-labelledby={`${labelId} ${valueId}`}
         className="nbr-severity__trigger"
         disabled={disabled}
         onClick={() => {
@@ -144,7 +145,7 @@ export function SeveritySelect({
         role="combobox"
         type="button"
       >
-        <span>{selected?.label}</span>
+        <span id={valueId}>{selectedLabel}</span>
         <ChevronIcon direction={open ? "up" : "down"} height="14" width="14" />
       </button>
       {open ? (
@@ -160,6 +161,15 @@ export function SeveritySelect({
               className="nbr-severity__option"
               key={option.value}
               onClick={() => choose(index)}
+              onBlur={(event) => {
+                const nextTarget = event.relatedTarget;
+                if (
+                  !(nextTarget instanceof Node) ||
+                  !rootRef.current?.contains(nextTarget)
+                ) {
+                  setOpen(false);
+                }
+              }}
               onKeyDown={(event) => onOptionKeyDown(event, index)}
               ref={(node) => {
                 optionRefs.current[index] = node;

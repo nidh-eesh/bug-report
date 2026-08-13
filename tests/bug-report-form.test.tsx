@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { BugReportForm, createScreenshotAttachment } from "../src";
+import { ScreenshotCaptureError } from "../src/capture/types";
 import type { BugReport } from "../src";
 
 describe("BugReportForm", () => {
@@ -72,6 +73,7 @@ describe("BugReportForm", () => {
     render(
       <BugReportForm
         context={{ appVersion: "1.2.3", url: "https://example.test/tree" }}
+        defaultIncludeTechnicalContext
         onSubmit={onSubmit}
         reporter={{ email: "ada@example.com", name: "Ada" }}
       />,
@@ -83,7 +85,9 @@ describe("BugReportForm", () => {
     );
     await user.click(screen.getByRole("button", { name: /add details/i }));
     await user.click(
-      screen.getByRole("combobox", { name: "How much is it in your way?" }),
+      screen.getByRole("combobox", {
+        name: /How much is it in your way\? Choose a severity/,
+      }),
     );
     await user.click(screen.getByRole("option", { name: "It's blocking me" }));
     await user.type(screen.getByLabelText("Steps to reproduce"), "Open a tree");
@@ -138,12 +142,22 @@ describe("BugReportForm", () => {
       type: "image/png",
     });
 
-    await user.upload(screen.getByLabelText("Choose screenshot"), file);
+    const fileInput = screen.getByLabelText("Choose screenshot");
+    expect(fileInput).toHaveAttribute("tabindex", "-1");
+    await user.upload(fileInput, file);
 
     expect(screen.getByText("mobile-screenshot.png")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Remove screenshot" }),
     ).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Fewer details" }));
+    expect(screen.getByText("mobile-screenshot.png")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Remove screenshot" }),
+    ).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Remove screenshot" }));
+    expect(screen.queryByText("mobile-screenshot.png")).toBeNull();
   });
 
   it("has no automatic axe violations in its default and expanded states", async () => {
@@ -198,6 +212,7 @@ describe("BugReportForm", () => {
       <BugReportForm
         context={context}
         defaultExpanded
+        defaultIncludeTechnicalContext
         onError={onError}
         onSubmit={onSubmit}
       />,
@@ -221,6 +236,29 @@ describe("BugReportForm", () => {
         "We couldn't send your report. Check your connection and try again.",
       ),
     ).toBeNull();
+  });
+
+  it("keeps technical context off by default and does not resolve host context", async () => {
+    const user = userEvent.setup();
+    const context = vi.fn(async () => ({ appVersion: "2.0.0" }));
+    const onSubmit = vi.fn(async (_report: BugReport) => undefined);
+    render(
+      <BugReportForm
+        context={context}
+        defaultAnonymous
+        onSubmit={onSubmit}
+      />,
+    );
+
+    await user.type(screen.getByLabelText("What happened?"), "The page failed");
+    await user.click(screen.getByRole("button", { name: "Send report" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    expect(context).not.toHaveBeenCalled();
+    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({
+      includeTechnicalContext: false,
+    });
+    expect(onSubmit.mock.calls[0]?.[0]).not.toHaveProperty("context");
   });
 
   it("uses semantic color overrides, custom copy, and anonymous callbacks", async () => {
@@ -273,6 +311,7 @@ describe("BugReportForm", () => {
         context={context}
         defaultAnonymous
         defaultExpanded
+        defaultIncludeTechnicalContext
         onSubmit={onSubmit}
       />,
     );
@@ -303,6 +342,29 @@ describe("BugReportForm", () => {
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(2));
     expect(onSubmit.mock.calls[1]?.[0]).not.toHaveProperty("context");
     expect(context).toHaveBeenCalledOnce();
+  });
+
+  it("leaves severity unset until the reporter selects a value", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn(async (_report: BugReport) => undefined);
+    render(
+      <BugReportForm
+        copy={{ severityPlaceholder: "Select urgency" }}
+        defaultAnonymous
+        defaultExpanded
+        onSubmit={onSubmit}
+      />,
+    );
+
+    const combobox = screen.getByRole("combobox", {
+      name: "How much is it in your way? Select urgency",
+    });
+    expect(combobox).toHaveTextContent("Select urgency");
+    await user.type(screen.getByLabelText("What happened?"), "The page failed");
+    await user.click(screen.getByRole("button", { name: "Send report" }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce());
+    expect(onSubmit.mock.calls[0]?.[0]).not.toHaveProperty("details");
   });
 
   it("handles supported, failed, and oversized capture providers", async () => {
@@ -337,7 +399,37 @@ describe("BugReportForm", () => {
     );
     await user.click(screen.getByRole("button", { name: "Capture this page" }));
     expect(await screen.findByText("Canvas could not be read")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Fewer details" }));
+    expect(screen.getByText("Canvas could not be read")).toBeVisible();
   });
+
+  it.each(["AbortError", "NotAllowedError"] as const)(
+    "silently ignores a %s screenshot cancellation",
+    async (name) => {
+      const user = userEvent.setup();
+      const cause = new Error("capture was cancelled");
+      Object.defineProperty(cause, "cause", {
+        configurable: true,
+        value: new DOMException("cancelled", name),
+      });
+      const capture = {
+        isSupported: () => true,
+        capture: vi.fn(async () => {
+          throw new ScreenshotCaptureError("Capture cancelled", cause);
+        }),
+      };
+      render(
+        <BugReportForm capture={capture} defaultExpanded onSubmit={vi.fn()} />,
+      );
+
+      await user.click(screen.getByRole("button", { name: "Capture this page" }));
+
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Capture this page" })).toBeEnabled(),
+      );
+      expect(screen.queryByRole("alert")).toBeNull();
+    },
+  );
 
   it("rejects invalid uploads and can remove all screenshot actions", async () => {
     const user = userEvent.setup({ applyAccept: false });
@@ -384,7 +476,7 @@ describe("BugReportForm", () => {
       throw new Error("host callback failed");
     });
     const onError = vi.fn();
-    render(
+    const { container } = render(
       <BugReportForm
         defaultAnonymous
         onError={onError}
@@ -392,9 +484,22 @@ describe("BugReportForm", () => {
         onSuccess={onSuccess}
       />,
     );
+    const liveRegion = container.querySelector<HTMLElement>(
+      '[aria-live="polite"]',
+    );
+    expect(liveRegion).toBeInTheDocument();
+    expect(liveRegion).toBeEmptyDOMElement();
     await user.type(screen.getByLabelText("What happened?"), "The page failed");
     await user.click(screen.getByRole("button", { name: "Send report" }));
-    expect(await screen.findByText("Got it — thank you.")).toBeVisible();
+    const successHeading = await screen.findByRole("heading", {
+      name: "Got it — thank you.",
+    });
+    expect(successHeading).toBeVisible();
+    expect(successHeading).toHaveFocus();
+    expect(container.querySelector('[aria-live="polite"]')).toBe(liveRegion);
+    expect(liveRegion).toHaveTextContent(
+      "Got it — thank you. Your report was sent without your name or email.",
+    );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
     await waitFor(() =>
       expect(onError).toHaveBeenCalledWith(expect.any(Error)),
@@ -410,7 +515,7 @@ describe("BugReportForm", () => {
     const user = userEvent.setup();
     render(<BugReportForm defaultExpanded onSubmit={vi.fn()} />);
     const combobox = screen.getByRole("combobox", {
-      name: "How much is it in your way?",
+      name: /How much is it in your way\? Choose a severity/,
     });
 
     combobox.focus();
@@ -424,6 +529,14 @@ describe("BugReportForm", () => {
     await user.keyboard("{Enter}{Escape}");
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(combobox).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    expect(
+      screen.getByRole("option", { name: "Something looks lost or wrong" }),
+    ).toHaveFocus();
+    await user.tab();
+    expect(screen.getByLabelText("Steps to reproduce")).toHaveFocus();
+    expect(screen.queryByRole("listbox")).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Fewer details" }));
     expect(screen.queryByRole("combobox")).toBeNull();

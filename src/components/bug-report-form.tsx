@@ -13,6 +13,7 @@ import {
   BugReportValidationError,
   createBugReport,
   createScreenshotAttachment,
+  formatBytes,
   validateBugReportInput,
   type BugReport,
   type BugReportContact,
@@ -22,7 +23,10 @@ import {
   type BugReportSubmit,
   type ScreenshotAttachment,
 } from "../core.js";
-import type { ScreenshotCaptureProvider } from "../capture/types.js";
+import {
+  ScreenshotCaptureError,
+  type ScreenshotCaptureProvider,
+} from "../capture/types.js";
 import {
   CameraIcon,
   CheckIcon,
@@ -64,6 +68,7 @@ export interface BugReportCopy {
   addDetails: string;
   fewerDetails: string;
   severityLabel: string;
+  severityPlaceholder: string;
   stepsLabel: string;
   stepsPlaceholder: string;
   expectedLabel: string;
@@ -99,6 +104,7 @@ export const DEFAULT_BUG_REPORT_COPY: BugReportCopy = {
   addDetails: "Add details that help us fix it faster",
   fewerDetails: "Fewer details",
   severityLabel: "How much is it in your way?",
+  severityPlaceholder: "Choose a severity",
   stepsLabel: "Steps to reproduce",
   stepsPlaceholder: "1. …",
   expectedLabel: "Expected",
@@ -189,10 +195,32 @@ function mergeContext(
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
-function readableSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+function isSilentCaptureCancellation(error: unknown): boolean {
+  if (!(error instanceof ScreenshotCaptureError)) return false;
+
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+  while (
+    current !== null &&
+    (typeof current === "object" || typeof current === "function") &&
+    !seen.has(current)
+  ) {
+    seen.add(current);
+    if (
+      typeof DOMException !== "undefined" &&
+      current instanceof DOMException &&
+      (current.name === "AbortError" || current.name === "NotAllowedError")
+    ) {
+      return true;
+    }
+
+    current =
+      "cause" in current
+        ? (current as { cause?: unknown }).cause
+        : undefined;
+  }
+
+  return false;
 }
 
 export function createBugReportCssVariables(
@@ -230,7 +258,7 @@ export function BugReportForm({
   copy: copyOverrides,
   defaultAnonymous = false,
   defaultExpanded = false,
-  defaultIncludeTechnicalContext = true,
+  defaultIncludeTechnicalContext = false,
   collectBrowserContext = true,
   allowScreenshotUpload = true,
   maxAttachmentBytes = 10 * 1024 * 1024,
@@ -252,7 +280,7 @@ export function BugReportForm({
   const [name, setName] = useState(reporter?.name ?? "");
   const [email, setEmail] = useState(reporter?.email ?? "");
   const [message, setMessage] = useState("");
-  const [severity, setSeverity] = useState<BugReportSeverity>("annoying");
+  const [severity, setSeverity] = useState<BugReportSeverity | undefined>();
   const [steps, setSteps] = useState("");
   const [expected, setExpected] = useState("");
   const [actual, setActual] = useState("");
@@ -275,6 +303,7 @@ export function BugReportForm({
   const emailErrorId = useId();
   const detailsId = useId();
   const anonymousTooltipId = useId();
+  const successHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     const previous = previousReporter.current;
@@ -288,6 +317,10 @@ export function BugReportForm({
   useEffect(() => {
     setCaptureSupported(Boolean(capture?.isSupported()));
   }, [capture]);
+
+  useEffect(() => {
+    if (phase === "success") successHeadingRef.current?.focus();
+  }, [phase]);
 
   const previewUrl = useMemo(
     () => (attachment ? URL.createObjectURL(attachment.blob) : undefined),
@@ -340,12 +373,13 @@ export function BugReportForm({
           {
             field: "attachment",
             code: "too_large",
-            message: `The screenshot must be ${readableSize(maxAttachmentBytes)} or smaller.`,
+            message: `The screenshot must be ${formatBytes(maxAttachmentBytes)} or smaller.`,
           },
         ]);
       }
       setAttachment(result);
     } catch (error) {
+      if (isSilentCaptureCancellation(error)) return;
       setErrors((current) => ({
         ...current,
         attachment:
@@ -375,7 +409,12 @@ export function BugReportForm({
         message,
         includeTechnicalContext,
         contact: { name, email },
-        details: { severity, steps, expected, actual },
+        details: {
+          ...(severity ? { severity } : {}),
+          steps,
+          expected,
+          actual,
+        },
         ...(attachment ? { attachment } : {}),
       };
       validateBugReportInput(input);
@@ -415,7 +454,7 @@ export function BugReportForm({
 
   const reset = () => {
     setMessage("");
-    setSeverity("annoying");
+    setSeverity(undefined);
     setSteps("");
     setExpected("");
     setActual("");
@@ -443,12 +482,19 @@ export function BugReportForm({
       data-theme={theme}
       style={rootStyle}
     >
+      <div aria-atomic="true" aria-live="polite" className="nbr-sr-only">
+        {phase === "success"
+          ? `${copy.successTitle} ${anonymous ? copy.successAnonymous : copy.successIdentified}`
+          : null}
+      </div>
       {phase === "success" ? (
-        <div aria-live="polite" className="nbr-success">
+        <div className="nbr-success">
           <span className="nbr-success__icon">
             <CheckIcon height="18" width="18" />
           </span>
-          <h2>{copy.successTitle}</h2>
+          <h2 ref={successHeadingRef} tabIndex={-1}>
+            {copy.successTitle}
+          </h2>
           <p>{anonymous ? copy.successAnonymous : copy.successIdentified}</p>
           <button className="nbr-link-button" onClick={reset} type="button">
             {copy.reportAnother}
@@ -577,6 +623,7 @@ export function BugReportForm({
                 disabled={busy}
                 label={copy.severityLabel}
                 onChange={setSeverity}
+                placeholder={copy.severityPlaceholder}
                 value={severity}
               />
 
@@ -628,6 +675,7 @@ export function BugReportForm({
                         disabled={busy}
                         onChange={setUploadedFile}
                         ref={fileInputRef}
+                        tabIndex={-1}
                         type="file"
                       />
                       <button
@@ -667,7 +715,7 @@ export function BugReportForm({
                         {attachment.filename}
                       </span>
                       <span aria-hidden="true">·</span>
-                      <span>{readableSize(attachment.size)}</span>
+                      <span>{formatBytes(attachment.size)}</span>
                     </span>
                     <button
                       aria-label={copy.removeScreenshot}
@@ -698,6 +746,39 @@ export function BugReportForm({
                 />
                 <span>{copy.technicalContext}</span>
               </label>
+            </div>
+          ) : null}
+
+          {!expanded && (attachment || errors.attachment) ? (
+            <div className="nbr-attachment nbr-attachment--collapsed">
+              {attachment ? (
+                <div className="nbr-attachment__file">
+                  {previewUrl ? (
+                    <img alt={copy.screenshotPreview} src={previewUrl} />
+                  ) : null}
+                  <span className="nbr-attachment__metadata">
+                    <span title={attachment.filename}>
+                      {attachment.filename}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>{formatBytes(attachment.size)}</span>
+                  </span>
+                  <button
+                    aria-label={copy.removeScreenshot}
+                    className="nbr-remove"
+                    disabled={busy}
+                    onClick={() => setAttachment(undefined)}
+                    type="button"
+                  >
+                    remove
+                  </button>
+                </div>
+              ) : null}
+              {errors.attachment ? (
+                <p className="nbr-error" role="alert">
+                  {errors.attachment}
+                </p>
+              ) : null}
             </div>
           ) : null}
 
