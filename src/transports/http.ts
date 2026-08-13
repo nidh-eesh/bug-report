@@ -24,6 +24,40 @@ interface ProblemDetails {
   [extension: string]: unknown;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isValidDateTime(value: string): boolean {
+  const dateTime = value.trim();
+  const rfc3339DateTime =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+  return rfc3339DateTime.test(dateTime) && Number.isFinite(Date.parse(dateTime));
+}
+
+function isBugReportReceipt(value: unknown): value is BugReportReceipt {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value.id !== "string" ||
+    value.id.trim().length === 0 ||
+    value.id.length > 256
+  ) {
+    return false;
+  }
+  if (
+    typeof value.acceptedAt !== "string" ||
+    !isValidDateTime(value.acceptedAt)
+  ) {
+    return false;
+  }
+  if (value.provider !== undefined) {
+    if (typeof value.provider !== "string" || value.provider.length > 100) {
+      return false;
+    }
+  }
+  return value.metadata === undefined || isRecord(value.metadata);
+}
+
 function codeForStatus(status: number): BugReportTransportError["code"] {
   if (status === 400 || status === 422) return "BAD_REQUEST";
   if (status === 401) return "UNAUTHORIZED";
@@ -48,7 +82,8 @@ async function parseProblem(response: Response): Promise<ProblemDetails> {
   const contentType = response.headers.get("content-type") ?? "";
   if (contentType.includes("json")) {
     try {
-      return (await response.json()) as ProblemDetails;
+      const problem: unknown = await response.json();
+      if (isRecord(problem)) return problem;
     } catch {
       // Fall back to the HTTP status below.
     }
@@ -134,7 +169,10 @@ export function createHttpTransport(
     }
 
     try {
-      const receipt = (await response.json()) as BugReportReceipt;
+      const receipt: unknown = await response.json();
+      if (!isBugReportReceipt(receipt)) {
+        throw new TypeError("The response does not match BugReportReceipt.");
+      }
       return { ...receipt, provider: receipt.provider ?? "http" };
     } catch (cause) {
       throw new BugReportTransportError(

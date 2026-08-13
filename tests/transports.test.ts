@@ -177,6 +177,60 @@ describe("HTTP transport", () => {
   });
 
   it.each([
+    ["a JSON string", "ok"],
+    ["an array", ["ok"]],
+    ["a number", 42],
+    ["null", null],
+    ["an empty object", {}],
+    ["a blank id", { id: " ", acceptedAt: "2026-08-13T00:00:01.000Z" }],
+    ["a numeric id", { id: 7, acceptedAt: "2026-08-13T00:00:01.000Z" }],
+    ["a missing timestamp", { id: "report-1" }],
+    ["a date without time", { id: "report-1", acceptedAt: "2026-08-13" }],
+    ["an invalid timestamp", { id: "report-1", acceptedAt: "yesterday" }],
+    [
+      "an oversized provider",
+      {
+        id: "report-1",
+        acceptedAt: "2026-08-13T00:00:01.000Z",
+        provider: "x".repeat(101),
+      },
+    ],
+    [
+      "non-object metadata",
+      {
+        id: "report-1",
+        acceptedAt: "2026-08-13T00:00:01.000Z",
+        metadata: [],
+      },
+    ],
+  ])("rejects %s as an invalid success receipt", async (_description, body) => {
+    const transport = createHttpTransport({
+      endpoint: "/v1/bug-reports",
+      fetch: vi.fn(
+        async () =>
+          new Response(JSON.stringify(body), {
+            headers: { "content-type": "application/json" },
+            status: 201,
+          }),
+      ) as typeof fetch,
+    });
+
+    await expect(
+      transport(
+        createBugReport({
+          anonymous: true,
+          includeTechnicalContext: false,
+          message: "The editor failed",
+        }),
+      ),
+    ).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      retryable: false,
+      status: 201,
+    });
+  });
+
+  it.each([
     [400, "BAD_REQUEST"],
     [401, "UNAUTHORIZED"],
     [404, "NOT_FOUND"],
