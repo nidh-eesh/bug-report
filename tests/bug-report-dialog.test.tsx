@@ -79,7 +79,14 @@ describe("BugReportWidget", () => {
     render(
       <BugReportWidget
         accentColor="#6557d2"
-        colors={{ surface: "#fffdf8", text: "#211f1a" }}
+        colors={{
+          accent: "#8277aa",
+          border: "#b9b2a8",
+          onPrimary: "#fffdf8",
+          primary: "#4a4258",
+          surface: "#fffdf8",
+          text: "#211f1a",
+        }}
         defaultOpen
         fontFamily='"Host Sans", sans-serif'
         monoFontFamily='"Host Mono", monospace'
@@ -97,6 +104,11 @@ describe("BugReportWidget", () => {
     expect(trigger).toHaveAttribute("data-position", "top-left");
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(trigger.style.getPropertyValue("--nbr-primary")).toBe("#171421");
+    expect(trigger.style.getPropertyValue("--nbr-onPrimary")).toBe("#fffdf8");
+    expect(trigger.style.getPropertyValue("--nbr-border")).toBe("#b9b2a8");
+    expect(trigger.style.getPropertyValue("--nbr-accent")).toBe("#6557d2");
+    expect(trigger.style.getPropertyValue("--nbr-surface")).toBe("#fffdf8");
+    expect(trigger.style.getPropertyValue("--nbr-text")).toBe("#211f1a");
     expect(trigger.style.getPropertyValue("--nbr-font-family")).toBe(
       '"Host Sans", sans-serif',
     );

@@ -123,7 +123,8 @@ export const DEFAULT_BUG_REPORT_COPY: BugReportCopy = {
   reportAnother: "Report something else",
 };
 
-type BugReportCssProperties = CSSProperties & Record<`--nbr-${string}`, string>;
+export type BugReportCssProperties = CSSProperties &
+  Record<`--nbr-${string}`, string>;
 
 export interface BugReportFormProps {
   onSubmit: BugReportSubmit;
@@ -194,7 +195,7 @@ function readableSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function cssVariables(
+export function createBugReportCssVariables(
   colors: Partial<BugReportColors> | undefined,
   accentColor: string | undefined,
   primaryColor: string | undefined,
@@ -425,7 +426,7 @@ export function BugReportForm({
   };
 
   const rootStyle: BugReportCssProperties = {
-    ...cssVariables(
+    ...createBugReportCssVariables(
       colors,
       accentColor,
       primaryColor,

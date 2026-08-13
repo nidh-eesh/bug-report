@@ -9,11 +9,11 @@ import {
 import {
   BugReportForm,
   DEFAULT_BUG_REPORT_COPY,
+  createBugReportCssVariables,
+  type BugReportCssProperties,
   type BugReportFormProps,
 } from "./bug-report-form.js";
 import { BugIcon, CloseIcon } from "./icons.js";
-
-type BugReportCssProperties = CSSProperties & Record<`--nbr-${string}`, string>;
 
 export interface BugReportDialogProps extends BugReportFormProps {
   open: boolean;
@@ -38,15 +38,13 @@ export function BugReportDialog({
 }: BugReportDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const title = copy?.title ?? DEFAULT_BUG_REPORT_COPY.title;
-  const dialogStyle: BugReportCssProperties = Object.fromEntries(
-    Object.entries({
-      ...colors,
-      ...(accentColor ? { accent: accentColor } : {}),
-      ...(primaryColor ? { primary: primaryColor } : {}),
-    }).map(([key, value]) => [`--nbr-${key}`, value]),
-  ) as BugReportCssProperties;
-  if (fontFamily) dialogStyle["--nbr-font-family"] = fontFamily;
-  if (monoFontFamily) dialogStyle["--nbr-mono-font-family"] = monoFontFamily;
+  const dialogStyle = createBugReportCssVariables(
+    colors,
+    accentColor,
+    primaryColor,
+    fontFamily,
+    monoFontFamily,
+  );
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -134,15 +132,16 @@ export function BugReportWidget({
     setOpen(next);
     onOpenChange?.(next);
   };
-  const colorVariables = {
-    ...(accentColor ? { "--nbr-accent": accentColor } : {}),
-    ...(primaryColor ? { "--nbr-primary": primaryColor } : {}),
-    ...(colors?.surface ? { "--nbr-surface": colors.surface } : {}),
-    ...(colors?.text ? { "--nbr-text": colors.text } : {}),
-    ...(fontFamily ? { "--nbr-font-family": fontFamily } : {}),
-    ...(monoFontFamily ? { "--nbr-mono-font-family": monoFontFamily } : {}),
+  const colorVariables: BugReportCssProperties = {
+    ...createBugReportCssVariables(
+      colors,
+      accentColor,
+      primaryColor,
+      fontFamily,
+      monoFontFamily,
+    ),
     ...triggerStyle,
-  } as BugReportCssProperties;
+  };
 
   return (
     <>
