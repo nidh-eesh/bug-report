@@ -295,6 +295,27 @@ The adapter uses `navigator.mediaDevices.getDisplayMedia`, captures one shared f
 
 Display capture is usually unavailable on mobile browsers and requires a secure context outside development exceptions such as localhost.
 
+Pass `displayMedia` to steer the browser's picker. Host values are merged over the defaults, so `video` can carry explicit dimensions:
+
+```tsx
+const capture = createDisplayMediaCapture({
+  displayMedia: {
+    monitorTypeSurfaces: "exclude",
+    preferCurrentTab: true,
+    selfBrowserSurface: "include",
+    surfaceSwitching: "exclude",
+  },
+});
+```
+
+Several mobile and embedded engines expose `getDisplayMedia` and then reject every call, which would leave the reporter with a capture action that cannot work. Because the right test differs by application, the adapter takes an `isSupported` override instead of sniffing user agents itself. It can only withdraw support, never claim an API the browser does not provide:
+
+```tsx
+const capture = createDisplayMediaCapture({
+  isSupported: () => !isMobileBrowser() && window.isSecureContext,
+});
+```
+
 ### Custom capture provider
 
 ```tsx
@@ -321,6 +342,32 @@ function createNativeCapture(
 ```
 
 Capture failures surface as `ScreenshotCaptureError`; attachment validation may instead throw `BugReportValidationError`. `ScreenshotCaptureError` is available from the package root and both capture entry points, and preserves `instanceof` identity across them.
+
+### Keeping the component out of its own screenshot
+
+A provider that photographs the composited screen (display capture, an Electron `desktopCapturer`, a native shell bridge) would otherwise catch the open bug report in the reporter's own screenshot. Set `requiresHiddenUi` and the component takes itself out of the frame:
+
+```tsx
+const capture: ScreenshotCaptureProvider = {
+  isSupported: () => true,
+  requiresHiddenUi: true,
+  async capture() {
+    /* … */
+  },
+};
+```
+
+The form, dialog, and widget trigger become invisible, wait for a paint, then call `capture()` and reappear. Visibility is withdrawn rather than layout, so nothing unmounts and the reporter's draft, attachments, and scroll position are untouched. Hosts hide their own fixed chrome through `onCapturingChange`, which brackets the same window:
+
+```tsx
+<BugReportWidget
+  capture={capture}
+  onCapturingChange={(capturing) => setToolbarHidden(capturing)}
+  onSubmit={sendReport}
+/>
+```
+
+`createDisplayMediaCapture` sets `requiresHiddenUi` for you. DOM adapters leave it unset: `createModernScreenshotCapture` already skips the component through `data-bug-report-exclude`, so hiding it would only flicker.
 
 ## Theming and copy
 
@@ -375,6 +422,7 @@ For lower-level styling, override the scoped `--nbr-*` custom properties, or pas
 | `className` | `string` | — | Adds a class to the form root. |
 | `style` | `CSSProperties` | — | Adds inline styles and may override `--nbr-*` variables. |
 | `onAnonymousChange` | `(anonymous: boolean) => void` | — | Observes anonymous-state changes. |
+| `onCapturingChange` | `(capturing: boolean) => void` | - | Brackets a `requiresHiddenUi` capture so the host can hide its own chrome. |
 | `onSuccess` | `(receipt, report) => void` | — | Runs after successful delivery; callback failures go to `onError`. |
 | `onError` | `(error: unknown) => void` | — | Observes transport, context, and callback failures. |
 
@@ -404,7 +452,9 @@ Accepts every `BugReportForm` prop, plus:
 
 ### Capture adapters
 
-`createModernScreenshotCapture(options)` accepts `target`, `domToBlob`, `exclude`, `filename`, `backgroundColor`, `maximumCanvasSize`, and `maxScale`. `createDisplayMediaCapture(options)` accepts `mediaDevices`, `filename`, and `maximumCanvasSize`.
+`createModernScreenshotCapture(options)` accepts `target`, `domToBlob`, `exclude`, `filename`, `backgroundColor`, `maximumCanvasSize`, and `maxScale`. `createDisplayMediaCapture(options)` accepts `mediaDevices`, `filename`, `maximumCanvasSize`, `displayMedia`, and `isSupported`.
+
+Any provider may set `requiresHiddenUi` to have the component leave the frame before `capture()` runs.
 
 The injectable `domToBlob`, `mediaDevices`, and filename functions are useful for native bridges and tests. Most applications should use the defaults.
 
