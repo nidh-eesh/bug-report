@@ -183,6 +183,72 @@ describe("display-media capture adapter", () => {
     expect(capture.isSupported()).toBe(false);
   });
 
+  it("declares that the host UI must be hidden before the frame is taken", () => {
+    const capture = createDisplayMediaCapture({
+      mediaDevices: {} as MediaDevices,
+    });
+
+    expect(capture.requiresHiddenUi).toBe(true);
+  });
+
+  it("lets the host narrow support beyond the browser capability probe", () => {
+    const capture = createDisplayMediaCapture({
+      isSupported: () => false,
+      mediaDevices: { getDisplayMedia: vi.fn() } as unknown as MediaDevices,
+    });
+
+    expect(capture.isSupported()).toBe(false);
+  });
+
+  it("keeps a host support override from claiming an unavailable API", () => {
+    const capture = createDisplayMediaCapture({
+      isSupported: () => true,
+      mediaDevices: {} as MediaDevices,
+    });
+
+    expect(capture.isSupported()).toBe(false);
+  });
+
+  it("forwards host display-media constraints to the browser", async () => {
+    const getDisplayMedia = vi.fn(async () => ({
+      getTracks: () => [{ stop: vi.fn() }],
+    }));
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", {
+      configurable: true,
+      value: 640,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", {
+      configurable: true,
+      value: 360,
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
+      (callback) => callback(new Blob(["png"], { type: "image/png" })),
+    );
+    const capture = createDisplayMediaCapture({
+      displayMedia: {
+        monitorTypeSurfaces: "exclude",
+        preferCurrentTab: true,
+        selfBrowserSurface: "include",
+        video: { width: 1280 },
+      },
+      mediaDevices: { getDisplayMedia } as unknown as MediaDevices,
+    });
+
+    await capture.capture();
+
+    expect(getDisplayMedia).toHaveBeenCalledWith({
+      audio: false,
+      monitorTypeSurfaces: "exclude",
+      preferCurrentTab: true,
+      selfBrowserSurface: "include",
+      video: { width: 1280 },
+    });
+  });
+
   it("captures one video frame and always stops the display stream", async () => {
     const stop = vi.fn();
     const getDisplayMedia = vi.fn(async () => ({

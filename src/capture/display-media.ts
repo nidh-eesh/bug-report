@@ -7,11 +7,33 @@ import {
   type ScreenshotCaptureProvider,
 } from "./types.js";
 
+/**
+ * Display-capture hints that browsers ship ahead of the base TypeScript lib.
+ * They let a host prefer the current tab and drop monitor-level surfaces.
+ */
+export interface DisplayMediaRequest extends DisplayMediaStreamOptions {
+  monitorTypeSurfaces?: "exclude" | "include";
+  preferCurrentTab?: boolean;
+  selfBrowserSurface?: "exclude" | "include";
+  surfaceSwitching?: "exclude" | "include";
+}
+
 export interface DisplayMediaCaptureOptions {
   mediaDevices?: MediaDevices;
   filename?: string | (() => string);
   /** Longest output edge in pixels. Defaults to 2048. */
   maximumCanvasSize?: number;
+  /**
+   * Constraints and hints merged into the `getDisplayMedia` request. Host
+   * values win, so `video` can be replaced with explicit dimensions.
+   */
+  displayMedia?: DisplayMediaRequest;
+  /**
+   * Narrows support beyond the browser capability probe, for the mobile and
+   * embedded engines that expose `getDisplayMedia` but cannot honour it. It
+   * can only withdraw support, never claim an API the browser does not have.
+   */
+  isSupported?: () => boolean;
 }
 
 const DEFAULT_MAXIMUM_CANVAS_SIZE = 2048;
@@ -106,8 +128,13 @@ export function createDisplayMediaCapture(
     (typeof navigator === "undefined" ? undefined : navigator.mediaDevices);
 
   return {
+    // A shared screen is captured as the browser composites it, so the host
+    // must take its own UI off-screen before the frame is grabbed.
+    requiresHiddenUi: true,
+
     isSupported() {
-      return typeof getMediaDevices()?.getDisplayMedia === "function";
+      if (typeof getMediaDevices()?.getDisplayMedia !== "function") return false;
+      return options.isSupported?.() ?? true;
     },
 
     async capture() {
@@ -123,6 +150,7 @@ export function createDisplayMediaCapture(
         stream = await mediaDevices.getDisplayMedia({
           video: true,
           audio: false,
+          ...options.displayMedia,
         });
         const video = document.createElement("video");
         video.muted = true;
