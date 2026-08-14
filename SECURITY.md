@@ -6,7 +6,7 @@
 
 | Version | Supported |
 | --- | --- |
-| `0.1.x` | ✅ |
+| `0.2.x` | Yes |
 
 ## Reporting a vulnerability
 
@@ -27,7 +27,7 @@ The receiving server is responsible for:
 - image MIME and file-signature validation
 - generated storage keys rather than trusting client filenames
 - authorization for reading reports and attachments, plus retention and deletion
-- output encoding — never render report text as HTML
+- output encoding, never rendering report text as HTML
 - log and error scrubbing
 
 See [`openapi.yaml`](./openapi.yaml) for the server contract.

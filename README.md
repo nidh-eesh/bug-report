@@ -8,7 +8,7 @@ An accessible, themeable React bug-report form, dialog, and floating widget with
 
 The package initializes no analytics, Sentry, Session Replay, network request, or screenshot capture on its own. Your application chooses the transport, the capture method, and the data it supplies.
 
-> **`0.x` status** — public APIs are tested and documented, but breaking changes may occur before `1.0.0` and will be called out in release notes.
+> **`0.x` status.** Public APIs are tested and documented, but breaking changes may occur before `1.0.0` and will be called out in release notes.
 
 ## Contents
 
@@ -176,8 +176,8 @@ const submitBugReport = createHttpTransport({
 
 The adapter sends `multipart/form-data` with:
 
-- `report` — an `application/json` file containing the versioned report and attachment metadata
-- `attachment` — the optional PNG, JPEG, or WebP bytes
+- `report`: an `application/json` file containing the versioned report and attachment metadata
+- `attachment`: the optional PNG, JPEG, or WebP bytes
 
 A successful JSON response must contain a non-empty `id` and an RFC 3339 `acceptedAt`. A `204 No Content` response is also accepted. The timeout covers asynchronous headers, the request, and response parsing, and composes with an optional caller `signal`.
 
@@ -403,13 +403,13 @@ For lower-level styling, override the scoped `--nbr-*` custom properties, or pas
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
 | `onSubmit` | `BugReportSubmit` | required | Sends the validated report. |
-| `reporter` | `{ name?: string; email?: string }` | — | Prefills contact fields and accepts late session updates. |
-| `context` | `BugReportContext \| () => BugReportContext \| Promise<BugReportContext>` | — | Host context resolved only for an opted-in, locally valid submission. |
-| `capture` | `ScreenshotCaptureProvider` | — | Adds a capture action when `isSupported()` returns true. |
+| `reporter` | `{ name?: string; email?: string }` | - | Prefills contact fields and accepts late session updates. |
+| `context` | `BugReportContext \| () => BugReportContext \| Promise<BugReportContext>` | - | Host context resolved only for an opted-in, locally valid submission. |
+| `capture` | `ScreenshotCaptureProvider` | - | Adds a capture action when `isSupported()` returns true. |
 | `theme` | `"light" \| "dark" \| "auto"` | `"light"` | Selects the color theme. |
-| `colors` | `Partial<BugReportColors>` | — | Overrides semantic colors. |
-| `accentColor` | `string` | — | Overrides the accent color. |
-| `primaryColor` | `string` | — | Overrides primary buttons and the widget trigger. |
+| `colors` | `Partial<BugReportColors>` | - | Overrides semantic colors. |
+| `accentColor` | `string` | - | Overrides the accent color. |
+| `primaryColor` | `string` | - | Overrides primary buttons and the widget trigger. |
 | `fontFamily` | `string` | inherited | Sets the component font stack. |
 | `monoFontFamily` | `string` | inherited | Sets compact attachment-metadata text. |
 | `copy` | `Partial<BugReportCopy>` | built-in English | Overrides labels, errors, and success copy. |
@@ -419,12 +419,12 @@ For lower-level styling, override the scoped `--nbr-*` custom properties, or pas
 | `collectBrowserContext` | `boolean` | `true` | Adds browser context only when technical context is selected. |
 | `allowScreenshotUpload` | `boolean` | `true` | Enables the file picker. |
 | `maxAttachmentBytes` | `number` | `10 * 1024 * 1024` | Lowers the screenshot-size limit. |
-| `className` | `string` | — | Adds a class to the form root. |
-| `style` | `CSSProperties` | — | Adds inline styles and may override `--nbr-*` variables. |
-| `onAnonymousChange` | `(anonymous: boolean) => void` | — | Observes anonymous-state changes. |
+| `className` | `string` | - | Adds a class to the form root. |
+| `style` | `CSSProperties` | - | Adds inline styles and may override `--nbr-*` variables. |
+| `onAnonymousChange` | `(anonymous: boolean) => void` | - | Observes anonymous-state changes. |
 | `onCapturingChange` | `(capturing: boolean) => void` | - | Brackets a `requiresHiddenUi` capture so the host can hide its own chrome. |
-| `onSuccess` | `(receipt, report) => void` | — | Runs after successful delivery; callback failures go to `onError`. |
-| `onError` | `(error: unknown) => void` | — | Observes transport, context, and callback failures. |
+| `onSuccess` | `(receipt, report) => void` | - | Runs after successful delivery; callback failures go to `onError`. |
+| `onError` | `(error: unknown) => void` | - | Observes transport, context, and callback failures. |
 
 ### `BugReportDialog`
 
@@ -435,7 +435,7 @@ Accepts every `BugReportForm` prop, plus:
 | `open` | `boolean` | required | Controls the native dialog. |
 | `onOpenChange` | `(open: boolean) => void` | required | Receives close requests. |
 | `closeLabel` | `string` | `"Close bug report"` | Accessible label for the close button. |
-| `dialogClassName` | `string` | — | Adds a class to the dialog element. |
+| `dialogClassName` | `string` | - | Adds a class to the dialog element. |
 
 ### `BugReportWidget`
 
@@ -444,11 +444,11 @@ Accepts every `BugReportForm` prop, plus:
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
 | `defaultOpen` | `boolean` | `false` | Sets the initial uncontrolled open state. |
-| `onOpenChange` | `(open: boolean) => void` | — | Observes open-state changes. |
+| `onOpenChange` | `(open: boolean) => void` | - | Observes open-state changes. |
 | `triggerLabel` | `string` | `"Report a bug"` | Sets visible and accessible trigger text. |
 | `position` | `BugReportWidgetPosition` | `"bottom-right"` | Places the fixed trigger. |
-| `triggerClassName` | `string` | — | Adds a class to the trigger. |
-| `triggerStyle` | `CSSProperties` | — | Adds inline trigger styles. |
+| `triggerClassName` | `string` | - | Adds a class to the trigger. |
+| `triggerStyle` | `CSSProperties` | - | Adds inline trigger styles. |
 
 ### Capture adapters
 
@@ -545,7 +545,7 @@ Issues and focused pull requests are welcome. See [CONTRIBUTING.md](./CONTRIBUTI
 
 ## Security
 
-Client validation is a usability boundary, not a security boundary. The receiving server must independently enforce authentication, size limits, rate limiting, image validation, authorization, retention, and output encoding — see [`openapi.yaml`](./openapi.yaml). Do not ship long-lived provider secrets in browser-side headers; use short-lived authorization or a same-origin backend.
+Client validation is a usability boundary, not a security boundary. The receiving server must independently enforce authentication, size limits, rate limiting, image validation, authorization, retention, and output encoding. See [`openapi.yaml`](./openapi.yaml). Do not ship long-lived provider secrets in browser-side headers; use short-lived authorization or a same-origin backend.
 
 To report a vulnerability, see [SECURITY.md](./SECURITY.md).
 

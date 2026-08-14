@@ -108,7 +108,7 @@ describe("BugReportForm", () => {
       },
       message: "The tree stopped moving.",
     });
-    expect(screen.getByText("Got it — thank you.")).toBeInTheDocument();
+    expect(screen.getByText("Thanks for the report.")).toBeInTheDocument();
   });
 
   it("keeps the report editable after a transport failure", async () => {
@@ -188,7 +188,7 @@ describe("BugReportForm", () => {
     ).toBeVisible();
     expect(
       screen.getByText(
-        "That address looks off — or turn on anonymous and skip it.",
+        "Enter a valid email address, or report anonymously instead.",
       ),
     ).toBeVisible();
     expect(onSubmit).not.toHaveBeenCalled();
@@ -198,7 +198,7 @@ describe("BugReportForm", () => {
     expect(
       screen.queryByText("Tell us a little about what you saw first."),
     ).toBeNull();
-    expect(screen.queryByText(/That address looks off/)).toBeNull();
+    expect(screen.queryByText(/Enter a valid email address/)).toBeNull();
   });
 
   it("validates fields before resolving opted-in host context", async () => {
@@ -225,7 +225,7 @@ describe("BugReportForm", () => {
     ).toBeVisible();
     expect(
       screen.getByText(
-        "That address looks off — or turn on anonymous and skip it.",
+        "Enter a valid email address, or report anonymously instead.",
       ),
     ).toBeVisible();
     expect(context).not.toHaveBeenCalled();
@@ -598,13 +598,13 @@ describe("BugReportForm", () => {
     await user.type(screen.getByLabelText("What happened?"), "The page failed");
     await user.click(screen.getByRole("button", { name: "Send report" }));
     const successHeading = await screen.findByRole("heading", {
-      name: "Got it — thank you.",
+      name: "Thanks for the report.",
     });
     expect(successHeading).toBeVisible();
     expect(successHeading).toHaveFocus();
     expect(container.querySelector('[aria-live="polite"]')).toBe(liveRegion);
     expect(liveRegion).toHaveTextContent(
-      "Got it — thank you. Your report was sent without your name or email.",
+      "Thanks for the report. Your report was sent without your name or email.",
     );
     await waitFor(() => expect(onSuccess).toHaveBeenCalledOnce());
     await waitFor(() =>

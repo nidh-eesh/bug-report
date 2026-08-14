@@ -192,7 +192,7 @@ test("supports upload, capture, failure-safe editing, and success", async ({
   await page.getByLabel("What happened?").fill("The application did not save.");
   await page.getByRole("button", { name: "Send report" }).click();
   await expect(
-    page.getByRole("heading", { name: "Got it — thank you." }),
+    page.getByRole("heading", { name: "Thanks for the report." }),
   ).toBeFocused();
 });
 
