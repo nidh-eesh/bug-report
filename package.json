@@ -1,6 +1,6 @@
 {
   "name": "react-bug-report",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "An accessible, themeable bug-report form and dialog with provider-neutral transports and optional screenshot capture.",
   "keywords": [
     "bug-report",
