@@ -35,11 +35,13 @@ export function BugReportDialog({
   primaryColor,
   fontFamily,
   monoFontFamily,
+  onCapturingChange,
   ...formProps
 }: BugReportDialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const pointerDownTarget = useRef<EventTarget | null>(null);
   const pointerUpTarget = useRef<EventTarget | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const title = copy?.title ?? DEFAULT_BUG_REPORT_COPY.title;
   const dialogStyle = createBugReportCssVariables(
     colors,
@@ -55,6 +57,11 @@ export function BugReportDialog({
     if (open && !dialog.open) dialog.showModal();
     else if (!open && dialog.open) dialog.close();
   }, [open]);
+
+  const updateCapturing = (next: boolean) => {
+    setCapturing(next);
+    onCapturingChange?.(next);
+  };
 
   const clickBackdrop = (event: MouseEvent<HTMLDialogElement>) => {
     const pressedOnBackdrop =
@@ -74,6 +81,7 @@ export function BugReportDialog({
       aria-label={title}
       className={["nbr-dialog", dialogClassName].filter(Boolean).join(" ")}
       data-bug-report-exclude=""
+      {...(open && capturing ? { "data-capturing": "true" } : {})}
       data-theme={theme}
       onCancel={(event) => {
         event.preventDefault();
@@ -113,6 +121,7 @@ export function BugReportDialog({
             {...(fontFamily ? { fontFamily } : {})}
             {...(monoFontFamily ? { monoFontFamily } : {})}
             {...formProps}
+            onCapturingChange={updateCapturing}
           />
         </div>
       ) : null}
@@ -148,12 +157,18 @@ export function BugReportWidget({
   fontFamily,
   monoFontFamily,
   colors,
+  onCapturingChange,
   ...dialogProps
 }: BugReportWidgetProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const [capturing, setCapturing] = useState(false);
   const updateOpen = (next: boolean) => {
     setOpen(next);
     onOpenChange?.(next);
+  };
+  const updateCapturing = (next: boolean) => {
+    setCapturing(next);
+    onCapturingChange?.(next);
   };
   const colorVariables: BugReportCssProperties = {
     ...createBugReportCssVariables(
@@ -176,6 +191,7 @@ export function BugReportWidget({
           .filter(Boolean)
           .join(" ")}
         data-bug-report-exclude=""
+        {...(capturing ? { "data-capturing": "true" } : {})}
         data-position={position}
         data-theme={theme}
         onClick={() => updateOpen(true)}
@@ -195,6 +211,7 @@ export function BugReportWidget({
         {...(monoFontFamily ? { monoFontFamily } : {})}
         {...(colors ? { colors } : {})}
         {...dialogProps}
+        onCapturingChange={updateCapturing}
       />
     </>
   );

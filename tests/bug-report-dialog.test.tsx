@@ -92,9 +92,60 @@ describe("BugReportDialog", () => {
     fireEvent.click(dialog);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it("hides the dialog chrome while a clean-frame capture runs", async () => {
+    const user = userEvent.setup();
+    let dialogStateDuringCapture: string | null = null;
+    const capture = {
+      isSupported: () => true,
+      requiresHiddenUi: true,
+      capture: vi.fn(async () => {
+        dialogStateDuringCapture = screen
+          .getByRole("dialog")
+          .getAttribute("data-capturing");
+        throw new Error("Canvas could not be read");
+      }),
+    };
+    render(
+      <BugReportDialog
+        capture={capture}
+        defaultExpanded
+        onOpenChange={vi.fn()}
+        onSubmit={vi.fn()}
+        open
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Capture this page" }));
+
+    expect(await screen.findByText("Canvas could not be read")).toBeVisible();
+    expect(dialogStateDuringCapture).toBe("true");
+    expect(screen.getByRole("dialog")).not.toHaveAttribute("data-capturing");
+  });
 });
 
 describe("BugReportWidget", () => {
+  it("hides its fixed trigger while a clean-frame capture runs", async () => {
+    const user = userEvent.setup();
+    let triggerStateDuringCapture: string | null = null;
+    const capture = {
+      isSupported: () => true,
+      requiresHiddenUi: true,
+      capture: vi.fn(async () => {
+        triggerStateDuringCapture = screen
+          .getByRole("button", { name: "Report a bug" })
+          .getAttribute("data-capturing");
+        throw new Error("Canvas could not be read");
+      }),
+    };
+    render(<BugReportWidget capture={capture} defaultExpanded defaultOpen onSubmit={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: "Capture this page" }));
+
+    expect(await screen.findByText("Canvas could not be read")).toBeVisible();
+    expect(triggerStateDuringCapture).toBe("true");
+  });
+
   it("ships an always-available trigger and opens the dialog", async () => {
     const user = userEvent.setup();
     render(<BugReportWidget onSubmit={vi.fn()} />);

@@ -9,17 +9,32 @@ import "./style.css";
 const params = new URLSearchParams(window.location.search);
 const theme = params.get("theme") === "dark" ? "dark" : "light";
 const useRealCapture = params.get("capture") === "real";
+// Screen-style capture is driven by a browser picker that cannot be automated,
+// so the demo stands in a provider that holds the hidden state long enough for
+// a test to observe it.
+const useHiddenUiCapture = params.get("capture") === "hidden-ui";
+
+const demoAttachment = async () =>
+  createScreenshotAttachment(new Blob(["demo-image"], { type: "image/png" }), {
+    filename: "captured-page.png",
+    source: "capture",
+  });
 
 const capture = useRealCapture
   ? createModernScreenshotCapture({ target: () => document.documentElement })
-  : {
-      isSupported: () => true,
-      capture: async () =>
-        createScreenshotAttachment(
-          new Blob(["demo-image"], { type: "image/png" }),
-          { filename: "captured-page.png", source: "capture" },
-        ),
-    };
+  : useHiddenUiCapture
+    ? {
+        isSupported: () => true,
+        requiresHiddenUi: true,
+        capture: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+          return demoAttachment();
+        },
+      }
+    : {
+        isSupported: () => true,
+        capture: demoAttachment,
+      };
 
 function Demo() {
   return (

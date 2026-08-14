@@ -688,6 +688,24 @@
   animation: nbr-backdrop-in 180ms ease both;
 }
 
+/*
+ * Screen capture photographs the page as the browser composites it, so the
+ * component takes itself out of the frame while a `requiresHiddenUi` provider
+ * runs. Visibility is withdrawn rather than layout: the dialog keeps its place
+ * in the top layer, so the reporter's draft survives and returns unchanged.
+ */
+.nbr[data-capturing="true"],
+.nbr-dialog[data-capturing="true"],
+.nbr-widget-trigger[data-capturing="true"] {
+  visibility: hidden;
+}
+
+.nbr-dialog[data-capturing="true"]::backdrop {
+  background: transparent;
+  backdrop-filter: none;
+  animation: none;
+}
+
 .nbr-dialog__panel {
   position: relative;
   width: 100%;

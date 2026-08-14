@@ -34,6 +34,7 @@ import {
   IncognitoIcon,
   PaperclipIcon,
 } from "./icons.js";
+import { nextPaint } from "./next-paint.js";
 import { SeveritySelect } from "./severity-select.js";
 
 export type BugReportTheme = "light" | "dark" | "auto";
@@ -154,6 +155,12 @@ export interface BugReportFormProps {
   className?: string;
   style?: CSSProperties;
   onAnonymousChange?(anonymous: boolean): void;
+  /**
+   * Runs when a capture provider that sets `requiresHiddenUi` starts and
+   * finishes, so the host can take its own fixed chrome off screen for the
+   * duration. Never fires for providers that exclude the component themselves.
+   */
+  onCapturingChange?(capturing: boolean): void;
   onSuccess?(receipt: BugReportReceipt | void, report: BugReport): void;
   onError?(error: unknown): void;
 }
@@ -265,6 +272,7 @@ export function BugReportForm({
   className,
   style,
   onAnonymousChange,
+  onCapturingChange,
   onSuccess,
   onError,
 }: BugReportFormProps) {
@@ -364,8 +372,15 @@ export function BugReportForm({
 
   const captureScreenshot = async () => {
     if (!capture) return;
+    const hideForCapture = Boolean(capture.requiresHiddenUi);
     setPhase("capturing");
     setErrors((current) => clearFieldError(current, "attachment"));
+    if (hideForCapture) {
+      // The host hides its chrome in the same render as this component, then
+      // both wait for one paint so neither reaches the shared frame.
+      onCapturingChange?.(true);
+      await nextPaint();
+    }
     try {
       const result = await capture.capture();
       if (result.size > maxAttachmentBytes) {
@@ -389,6 +404,7 @@ export function BugReportForm({
       }));
     } finally {
       setPhase("form");
+      if (hideForCapture) onCapturingChange?.(false);
     }
   };
 
@@ -475,10 +491,12 @@ export function BugReportForm({
     ...style,
   };
   const busy = phase === "sending" || phase === "capturing";
+  const hidden = phase === "capturing" && Boolean(capture?.requiresHiddenUi);
   return (
     <section
       className={["nbr", "nbr-card", className].filter(Boolean).join(" ")}
       data-bug-report="form"
+      {...(hidden ? { "data-capturing": "true" } : {})}
       data-theme={theme}
       style={rootStyle}
     >

@@ -46,6 +46,28 @@ test("keeps the trigger visible and opens an aligned dialog", async ({
   );
 });
 
+test("leaves the frame while a clean-frame capture runs and keeps the draft", async ({
+  page,
+}) => {
+  await page.goto("/?capture=hidden-ui");
+  const trigger = page.getByRole("button", { name: "Report a bug" });
+  await trigger.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+
+  const message = page.getByLabel("What happened?");
+  await message.fill("The export button does nothing");
+  await page.getByRole("button", { name: "Capture this page" }).click();
+
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeHidden();
+
+  await expect(page.getByText("captured-page.png")).toBeVisible();
+  await expect(dialog).toBeVisible();
+  await expect(trigger).toBeVisible();
+  await expect(message).toHaveValue("The export button does nothing");
+});
+
 test("preserves contact values while anonymous and keeps every other field", async ({
   page,
 }) => {

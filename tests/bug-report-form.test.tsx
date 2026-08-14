@@ -403,6 +403,112 @@ describe("BugReportForm", () => {
     expect(screen.getByText("Canvas could not be read")).toBeVisible();
   });
 
+  it("hides itself while a capture provider that needs a clean frame runs", async () => {
+    const user = userEvent.setup();
+    const attachment = createScreenshotAttachment(
+      new Blob(["image"], { type: "image/png" }),
+      { filename: "screen.png", source: "capture" },
+    );
+    let stateDuringCapture: string | null = null;
+    const capture = {
+      isSupported: () => true,
+      requiresHiddenUi: true,
+      capture: vi.fn(async () => {
+        stateDuringCapture =
+          document
+            .querySelector('[data-bug-report="form"]')
+            ?.getAttribute("data-capturing") ?? null;
+        return attachment;
+      }),
+    };
+    render(
+      <BugReportForm capture={capture} defaultExpanded onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Capture this page" }));
+
+    expect(await screen.findByText("screen.png")).toBeVisible();
+    expect(stateDuringCapture).toBe("true");
+    expect(
+      document.querySelector('[data-bug-report="form"]'),
+    ).not.toHaveAttribute("data-capturing");
+  });
+
+  it("stays visible for a capture provider that excludes the form itself", async () => {
+    const user = userEvent.setup();
+    const attachment = createScreenshotAttachment(
+      new Blob(["image"], { type: "image/png" }),
+      { filename: "dom.png", source: "capture" },
+    );
+    let stateDuringCapture: string | null = null;
+    const capture = {
+      isSupported: () => true,
+      capture: vi.fn(async () => {
+        stateDuringCapture =
+          document
+            .querySelector('[data-bug-report="form"]')
+            ?.getAttribute("data-capturing") ?? null;
+        return attachment;
+      }),
+    };
+    render(
+      <BugReportForm capture={capture} defaultExpanded onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Capture this page" }));
+
+    expect(await screen.findByText("dom.png")).toBeVisible();
+    expect(stateDuringCapture).toBeNull();
+  });
+
+  it("captures even when the browser never delivers an animation frame", async () => {
+    const user = userEvent.setup();
+    // A backgrounded tab can withhold animation frames indefinitely. The wait
+    // for a clean frame has to give up rather than strand the capture action.
+    vi.spyOn(window, "requestAnimationFrame").mockReturnValue(0);
+    const attachment = createScreenshotAttachment(
+      new Blob(["image"], { type: "image/png" }),
+      { filename: "unpainted.png", source: "capture" },
+    );
+    const capture = {
+      isSupported: () => true,
+      requiresHiddenUi: true,
+      capture: vi.fn(async () => attachment),
+    };
+    render(
+      <BugReportForm capture={capture} defaultExpanded onSubmit={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Capture this page" }));
+
+    expect(await screen.findByText("unpainted.png")).toBeVisible();
+  });
+
+  it("tells the host to hide its own chrome around a clean-frame capture", async () => {
+    const user = userEvent.setup();
+    const onCapturingChange = vi.fn();
+    const capture = {
+      isSupported: () => true,
+      requiresHiddenUi: true,
+      capture: vi.fn(async () => {
+        throw new Error("Canvas could not be read");
+      }),
+    };
+    render(
+      <BugReportForm
+        capture={capture}
+        defaultExpanded
+        onCapturingChange={onCapturingChange}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Capture this page" }));
+
+    expect(await screen.findByText("Canvas could not be read")).toBeVisible();
+    expect(onCapturingChange.mock.calls).toEqual([[true], [false]]);
+  });
+
   it.each(["AbortError", "NotAllowedError"] as const)(
     "silently ignores a %s screenshot cancellation",
     async (name) => {
