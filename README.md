@@ -1,38 +1,87 @@
-# @nidh-eesh/bug-report
+# react-bug-report
 
-An accessible React bug-report form and floating dialog with configurable styling, anonymous reporting, screenshots, and provider-neutral delivery.
+[![npm version](https://img.shields.io/npm/v/react-bug-report.svg)](https://www.npmjs.com/package/react-bug-report)
+[![license](https://img.shields.io/npm/l/react-bug-report.svg)](./LICENSE)
+[![types](https://img.shields.io/npm/types/react-bug-report.svg)](https://www.typescriptlang.org/)
 
-The package does not initialize analytics, Sentry, replay, network requests, or screenshot capture by itself. The host app supplies the submit function and opts into any capture provider it wants.
+An accessible, themeable React bug-report form, dialog, and floating widget with anonymous reporting, optional screenshots, and provider-neutral delivery.
 
-## Install
+The package initializes no analytics, Sentry, Session Replay, network request, or screenshot capture on its own. Your application chooses the transport, the capture method, and the data it supplies.
+
+> **`0.x` status** — public APIs are tested and documented, but breaking changes may occur before `1.0.0` and will be called out in release notes.
+
+## Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Quick start](#quick-start)
+- [Components](#components)
+- [Delivery](#delivery)
+- [Privacy and submitted data](#privacy-and-submitted-data)
+- [Screenshots](#screenshots)
+- [Theming and copy](#theming-and-copy)
+- [API reference](#api-reference)
+- [Accessibility](#accessibility)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
+- [Contributing](#contributing)
+- [Security](#security)
+- [License](#license)
+
+## Features
+
+- Floating widget, controlled dialog, and standalone form components
+- Responsive desktop dialog and mobile bottom sheet with safe-area positioning
+- Anonymous mode that omits name and email without changing the rest of the report
+- Session-aware name and email prefilling
+- Optional screenshot upload, DOM capture, display capture, or a custom provider
+- Built-in HTTP and Sentry adapters plus a provider-neutral callback
+- Light, dark, and system themes; semantic color, copy, and font overrides
+- Keyboard and screen-reader support, visible focus, reduced motion, forced-colors handling
+- ESM and CommonJS builds with TypeScript declarations
+- No bundled fonts or Sentry SDK; the DOM screenshot dependency is optional
+
+## Requirements
+
+- React 18.2 or 19, and React DOM 18.2 or 19
+- A browser with native `<dialog>` support for `BugReportDialog` and `BugReportWidget`
+- `modern-screenshot` 4.7 or newer, only when using the DOM capture adapter
+
+The visual components require React. Framework-free HTML applications need a separate DOM or web-component wrapper.
+
+## Installation
 
 ```sh
-npm install @nidh-eesh/bug-report
+npm install react-bug-report react react-dom
 ```
 
-React and React DOM are peer dependencies. `modern-screenshot` is optional and is needed only for its capture adapter.
+Import the stylesheet once near your application root:
 
-JavaScript and TypeScript React applications can both use the package. Consumers run the published ESM or CommonJS JavaScript; the included TypeScript declarations only provide optional editor and compiler support. The visual components require React, so framework-free HTML/DOM applications would need a separate web-component or DOM adapter.
+```ts
+import "react-bug-report/style.css";
+```
 
-## Floating widget
+For DOM screenshot capture, also install the optional peer:
+
+```sh
+npm install modern-screenshot
+```
+
+## Quick start
+
+The floating widget is the shortest integration. In Next.js App Router, render it from a Client Component because it uses browser APIs and React state.
 
 ```tsx
 "use client";
 
-import { BugReportWidget } from "@nidh-eesh/bug-report";
-import { createHttpTransport } from "@nidh-eesh/bug-report/transports/http";
-import "@nidh-eesh/bug-report/style.css";
+import { BugReportWidget } from "react-bug-report";
+import { createHttpTransport } from "react-bug-report/transports/http";
+import "react-bug-report/style.css";
 
 const submitBugReport = createHttpTransport({
   endpoint: "/v1/bug-reports",
 });
-
-interface AppSession {
-  user?: {
-    name?: string | null;
-    email?: string | null;
-  };
-}
 
 export function SupportWidget({ session }: { session: AppSession | null }) {
   return (
@@ -48,122 +97,234 @@ export function SupportWidget({ session }: { session: AppSession | null }) {
 }
 ```
 
-The fixed trigger uses safe-area insets on mobile and can be placed at `bottom-right`, `bottom-left`, `top-right`, or `top-left`. `BugReportForm` and `BugReportDialog` are also exported for custom placement.
+`reporter` updates are applied when session data arrives later, provided the reporter has not already edited that field.
 
-## Anonymous reports
+## Components
 
-Name and email are prefilled from `reporter` and remain editable. Turning on anonymous mode hides those two inputs and omits contact data from the submitted report. Turning it off restores the values. The message, detailed fields, screenshot, and opted-in technical context remain unchanged.
+### Floating widget
 
-Technical context is not included by default. When the reporter enables the technical-context checkbox, the supplied `context` (including an async context function) is evaluated at submission time; browser context collection is enabled by default and can be disabled with `collectBrowserContext={false}`.
-
-`redactBugReport(report)` is exported for applications that later choose to add a separate redaction policy. The component and built-in transports never call it automatically.
-
-## Screenshots on desktop and mobile
-
-Every expanded form has a normal image file input accepting PNG, JPEG, and WebP. It intentionally has no HTML `capture` attribute. On phones this allows the user to select an existing operating-system screenshot from Photos or Gallery, which is the dependable way to attach the real screen—including content outside the web page.
-
-DOM capture is an optional enhancement:
-
-```sh
-npm install modern-screenshot
-```
+`BugReportWidget` owns its open state and renders a fixed trigger plus the dialog.
 
 ```tsx
-import { createModernScreenshotCapture } from "@nidh-eesh/bug-report/capture/modern-screenshot";
-
-const capture = createModernScreenshotCapture({
-  target: () => document.documentElement,
-  exclude: ["[data-private]"],
-});
-
-<BugReportWidget capture={capture} onSubmit={submitBugReport} />;
+<BugReportWidget
+  onSubmit={submitBugReport}
+  position="bottom-right"
+  triggerLabel="Report a bug"
+/>
 ```
 
-This adapter captures a PNG representation of the current DOM viewport, excludes elements marked `data-bug-report-exclude`, restores nested scroll positions, caps pixel ratio at 2, and caps canvas dimensions at 4096 pixels by default. It is not an operating-system screenshot. Cross-origin images/fonts need CORS access; protected canvas/WebGL, native browser UI, cross-origin frames, and some video content may be blank or incomplete.
+Positions are `bottom-right`, `bottom-left`, `top-right`, and `top-left`. The trigger uses mobile safe-area insets and stays fixed while content scrolls.
 
-For supported desktop browsers, a dependency-free display-sharing adapter is also available:
+### Controlled dialog
+
+Use `BugReportDialog` when the host owns the trigger and open state.
 
 ```tsx
-import { createDisplayMediaCapture } from "@nidh-eesh/bug-report/capture/display-media";
+import { useState } from "react";
+import { BugReportDialog } from "react-bug-report";
 
-const capture = createDisplayMediaCapture({
-  maximumCanvasSize: 2048,
+export function FeedbackAction() {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)} type="button">
+        Report a bug
+      </button>
+      <BugReportDialog
+        onOpenChange={setOpen}
+        onSubmit={submitBugReport}
+        open={open}
+      />
+    </>
+  );
+}
+```
+
+### Standalone form
+
+Use `BugReportForm` inside an existing panel, drawer, route, or settings screen.
+
+```tsx
+import { BugReportForm } from "react-bug-report";
+
+<BugReportForm
+  defaultExpanded
+  onSubmit={submitBugReport}
+  reporter={{ name: "Ada Lovelace", email: "ada@example.com" }}
+/>;
+```
+
+## Delivery
+
+`onSubmit` receives a validated `BugReport` and may return a receipt synchronously or asynchronously. A thrown or rejected error keeps the report editable and shows the failure state.
+
+### HTTP transport
+
+```tsx
+import { createHttpTransport } from "react-bug-report/transports/http";
+
+const submitBugReport = createHttpTransport({
+  endpoint: "https://support.example.com/v1/bug-reports",
+  credentials: "include",
+  headers: async () => ({
+    Authorization: `Bearer ${await getShortLivedToken()}`,
+  }),
+  timeoutMs: 30_000,
 });
 ```
 
-The action is shown only when `getDisplayMedia()` exists. Shared frames are proportionally downscaled before canvas allocation so their longest side is at most 2048 pixels by default; set `maximumCanvasSize` to another finite value of at least 1 when you need a different quality/memory trade-off. Mobile browsers generally do not expose that API, so file selection remains the mobile baseline. Native shells can implement the small `ScreenshotCaptureProvider` interface and pass their own bridge.
+The adapter sends `multipart/form-data` with:
 
-## Sentry
+- `report` — an `application/json` file containing the versioned report and attachment metadata
+- `attachment` — the optional PNG, JPEG, or WebP bytes
 
-The Sentry adapter uses structural dependency injection, so this package does not install or bundle a Sentry SDK:
+A successful JSON response must contain a non-empty `id` and an RFC 3339 `acceptedAt`. A `204 No Content` response is also accepted. The timeout covers asynchronous headers, the request, and response parsing, and composes with an optional caller `signal`.
+
+Failures throw `BugReportTransportError` with `code`, `status`, `retryable`, `retryAfterMs`, and `cause`. Codes are `BAD_REQUEST`, `UNAUTHORIZED`, `FORBIDDEN`, `NOT_FOUND`, `PAYLOAD_TOO_LARGE`, `RATE_LIMITED`, `SERVER_ERROR`, `NETWORK_ERROR`, `INVALID_RESPONSE`, and `UNKNOWN`.
+
+See [`openapi.yaml`](./openapi.yaml) for the server contract, which leaves authentication, abuse prevention, storage, and retention to the receiving application.
+
+### Sentry transport
+
+The adapter accepts the host SDK's `sendFeedback` function, so this package neither installs nor bundles a Sentry SDK.
 
 ```tsx
 import * as Sentry from "@sentry/nextjs";
-import { createSentryTransport } from "@nidh-eesh/bug-report/transports/sentry";
+import { createSentryTransport } from "react-bug-report/transports/sentry";
 
 const submitBugReport = createSentryTransport({
   sendFeedback: Sentry.sendFeedback,
   includeReplay: true,
-  tags: { product: "my-app" },
-});
-
-<BugReportWidget onSubmit={submitBugReport} />;
-```
-
-Screenshot blobs become Sentry event attachments. Replay inclusion is a host setting and is not described to the reporter by the UI.
-
-The adapter forwards consented context through Sentry-compatible tags and `captureContext`, and always adds the package report ID as the searchable `bug_report_id` tag. It does not use that package ID as Sentry's `associatedEventId`. `ScreenshotCaptureError` is exported from the package root and both capture entry points for callers that need to distinguish capture cancellation or failure.
-
-Canvas replay is separate from feedback delivery and should stay in the host's Sentry client configuration:
-
-```ts
-import * as Sentry from "@sentry/nextjs";
-
-export function createCanvasReplayIntegration() {
-  return Sentry.replayCanvasIntegration({
-    enableManualSnapshot: false,
-  });
-}
-
-Sentry.init({
-  integrations: [Sentry.replayIntegration(), createCanvasReplayIntegration()],
+  source: "customer-dashboard",
+  tags: { product: "dashboard" },
 });
 ```
 
-Canvas replay has additional performance and privacy implications; configure it independently from whether a user can file a report.
+The adapter:
 
-## Any other provider
+- maps contact name and email only when the report is not anonymous
+- appends steps, expected behavior, and actual behavior to the feedback message
+- forwards the report URL and tags
+- adds severity when the reporter explicitly selected it
+- adds the package report ID as the searchable `bug_report_id` tag
+- forwards timestamps and opted-in technical context through `captureContext.extra`
+- sends a screenshot as a Sentry attachment
+- returns Sentry's event ID when `sendFeedback` provides one
 
-`onSubmit` receives a normalized, validated `BugReport`. It can call any SDK or endpoint:
+The package report ID is not passed as `associatedEventId`; it is not a Sentry error-event ID. `includeReplay` only asks the host SDK to associate an available replay. Canvas replay belongs in your own `Sentry.init` configuration and carries its own performance, compatibility, and privacy implications.
+
+### Any other provider
+
+No adapter is required. Send the normalized report to any SDK, server action, queue, or support platform:
 
 ```tsx
-import type { BugReport } from "@nidh-eesh/bug-report";
+import type { BugReport } from "react-bug-report";
 
 async function sendToMyProvider(report: BugReport) {
-  await mySupportSdk.createTicket({
+  const ticket = await mySupportSdk.createTicket({
     subject: report.message.slice(0, 80),
     body: report,
     image: report.attachment?.blob,
   });
 
-  return { id: "ticket-123", provider: "my-support-sdk" };
+  return { id: ticket.id, provider: "my-support-sdk" };
 }
 
 <BugReportForm onSubmit={sendToMyProvider} />;
 ```
 
-The supplied HTTP transport uses `multipart/form-data` with:
+If your transport accepts plain JSON, call `serializeBugReport(report)` to replace the attachment `Blob` with metadata, then send the bytes separately.
 
-- `report`: an `application/json` file containing the versioned report and attachment metadata;
-- `attachment`: the optional image bytes.
+## Privacy and submitted data
 
-Requests use a 30-second timeout by default and compose it with an optional caller `signal`; pass `timeoutMs` to change the timeout. Aborts and timeouts are reported as retryable `NETWORK_ERROR` transport errors.
+Name and email are prefilled from `reporter` and remain editable. Enabling anonymous mode hides those two fields and guarantees `createBugReport` omits `contact`. Disabling it restores the locally held values. Anonymous mode does not alter the message, detailed fields, screenshot, report ID, timestamp, or technical context, and performs no additional scrubbing.
 
-See [`openapi.yaml`](./openapi.yaml) for the server contract.
+Technical context defaults off. When selected, the form can include:
 
-## Theme and copy
+- `window.location.href`
+- viewport width and height, and device pixel ratio
+- `navigator.userAgent` and `navigator.language`
+- host-provided URL, application version, tags, and extra values
 
-The default light and dark themes preserve the component's colors, spacing, and motion while inheriting the host application's font. The package bundles no fonts and makes no font-network requests. Use `fontFamily` and `monoFontFamily` when the component should use explicitly loaded host fonts instead.
+The `context` function is evaluated only after local fields pass validation and only when technical context is enabled. Set `collectBrowserContext={false}` to send only host-provided context. Avoid supplying secrets, access tokens, or sensitive URL query and hash values.
+
+`redactBugReport(report)` removes both `contact` and `context`. The form and built-in transports never call it automatically.
+
+Every report otherwise contains schema version `1`, a client-generated ID, an ISO submission timestamp, anonymous and technical-context flags, the trimmed message, non-empty optional details, and any optional contact, context, and screenshot data.
+
+## Screenshots
+
+The form accepts one PNG, JPEG, or WebP screenshot. The default maximum is 10 MiB; `maxAttachmentBytes` can lower, but not raise, that ceiling. Collapsing the detail fields does not hide an attached screenshot: its preview, filename, size, and remove action stay visible.
+
+### File upload
+
+The built-in picker deliberately omits the HTML `capture` attribute. On mobile this lets the reporter select an existing operating-system screenshot from Photos or Gallery, which is the reliable way to attach the real screen, including content outside the web page.
+
+Set `allowScreenshotUpload={false}` to remove file upload. Capture actions appear only when a supplied provider reports support.
+
+### DOM capture with `modern-screenshot`
+
+```tsx
+import { createModernScreenshotCapture } from "react-bug-report/capture/modern-screenshot";
+
+const capture = createModernScreenshotCapture({
+  target: () => document.documentElement,
+  exclude: ["[data-private]"],
+  backgroundColor: "#ffffff",
+  maxScale: 2,
+  maximumCanvasSize: 4096,
+});
+
+<BugReportWidget capture={capture} onSubmit={submitBugReport} />;
+```
+
+This captures a PNG of the current DOM viewport. The widget excludes itself through `data-bug-report-exclude`; add that attribute or an `exclude` selector to omit other elements. The adapter restores nested scroll positions, caps pixel ratio at 2, and caps the longest canvas edge at 4096 pixels by default.
+
+This is not an operating-system screenshot. Cross-origin images and fonts need CORS access. Protected canvas/WebGL content, browser chrome, cross-origin frames, DRM content, and some videos may be blank or incomplete, so file upload remains the dependable fallback.
+
+### Display capture
+
+```tsx
+import { createDisplayMediaCapture } from "react-bug-report/capture/display-media";
+
+const capture = createDisplayMediaCapture({ maximumCanvasSize: 2048 });
+```
+
+The adapter uses `navigator.mediaDevices.getDisplayMedia`, captures one shared frame, stops every media track, and downsizes the longest edge before allocating its canvas. Browsers require a user gesture and show their own picker. `BugReportForm` silently ignores cancellation; other failures appear beside the screenshot actions.
+
+Display capture is usually unavailable on mobile browsers and requires a secure context outside development exceptions such as localhost.
+
+### Custom capture provider
+
+```tsx
+import {
+  createScreenshotAttachment,
+  type ScreenshotCaptureProvider,
+} from "react-bug-report";
+
+function createNativeCapture(
+  isSupported: () => boolean,
+  captureScreen: () => Promise<Blob>,
+): ScreenshotCaptureProvider {
+  return {
+    isSupported,
+    async capture() {
+      const blob = await captureScreen();
+      return createScreenshotAttachment(blob, {
+        filename: "screen.png",
+        source: "capture",
+      });
+    },
+  };
+}
+```
+
+Capture failures surface as `ScreenshotCaptureError`; attachment validation may instead throw `BugReportValidationError`. `ScreenshotCaptureError` is available from the package root and both capture entry points, and preserves `instanceof` identity across them.
+
+## Theming and copy
+
+The component inherits the host font, bundles no font files, and makes no font-network requests.
 
 ```tsx
 <BugReportWidget
@@ -173,55 +334,171 @@ The default light and dark themes preserve the component's colors, spacing, and 
     surface: "#fffdf8",
     field: "#f8f4eb",
     text: "#211f1a",
+    onPrimary: "#ffffff",
   }}
-  fontFamily='Inter, system-ui, sans-serif'
-  monoFontFamily='"JetBrains Mono", monospace'
-  copy={{ title: "Tell us what broke" }}
+  copy={{ title: "Tell us what broke", send: "Send to support" }}
+  fontFamily="Inter, system-ui, sans-serif"
   onSubmit={sendReport}
   theme="light"
 />
 ```
 
-The package does not load the supplied fonts; the host application remains responsible for making them available. `monoFontFamily` is used only for compact attachment metadata and its remove action. When omitted, it falls back to `fontFamily`, then the inherited host font.
+`theme` accepts `light`, `dark`, or `auto` (which follows `prefers-color-scheme`). `colors` accepts `surface`, `field`, `fieldFocus`, `text`, `muted`, `label`, `border`, `divider`, `accent`, `primary`, `onPrimary`, `danger`, and `success`. `accentColor` and `primaryColor` are applied after `colors`.
 
-For complete control, override the scoped `--nbr-*` custom properties—including `--nbr-font-family` and `--nbr-mono-font-family`—or pass `className`/`style` to `BugReportForm`. Host CSS is not reset globally.
+`copy` is a partial override of `DEFAULT_BUG_REPORT_COPY`. `fontFamily` and `monoFontFamily` must refer to fonts the host has already loaded.
 
-## Important props
+For lower-level styling, override the scoped `--nbr-*` custom properties, or pass `className`/`style` to `BugReportForm`, `dialogClassName` to `BugReportDialog`, and `triggerClassName`/`triggerStyle` to `BugReportWidget`. Host CSS is not reset globally.
 
-| Prop                           | Purpose                                                                                    |
-| ------------------------------ | ------------------------------------------------------------------------------------------ |
-| `onSubmit`                     | Required provider-neutral function.                                                        |
-| `reporter`                     | Prefills name and email, including when session data arrives later.                        |
-| `context`                      | Object or async function evaluated at submission time.                                     |
-| `capture`                      | Optional screenshot provider. Unsupported actions stay hidden.                             |
-| `theme`                        | `light`, `dark`, or `auto`.                                                                |
-| `colors`                       | Partial semantic color map.                                                                |
-| `accentColor` / `primaryColor` | Convenient brand overrides.                                                                |
-| `fontFamily`                   | Optional component font stack; inherits the host application's font by default.            |
-| `monoFontFamily`               | Optional attachment-metadata font stack; otherwise uses `fontFamily` or host inheritance.  |
-| `defaultAnonymous`             | Initial anonymous state.                                                                   |
-| `defaultExpanded`              | Initially show detailed fields.                                                            |
-| `collectBrowserContext`        | Add URL, viewport, locale, and user agent when the technical-context checkbox is selected. |
-| `copy`                         | Partial text override for localization or product voice.                                   |
+## API reference
 
-## Security and server responsibilities
+### `BugReportForm`
 
-Client validation is a usability feature, not a trust boundary. The receiving server must enforce authentication or abuse controls, rate limits, body-size limits, image MIME/signature checks, safe object names, retention, and authorization for viewing reports. Do not render report text as HTML. Avoid placing long-lived secrets in browser-side transport headers.
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `onSubmit` | `BugReportSubmit` | required | Sends the validated report. |
+| `reporter` | `{ name?: string; email?: string }` | — | Prefills contact fields and accepts late session updates. |
+| `context` | `BugReportContext \| () => BugReportContext \| Promise<BugReportContext>` | — | Host context resolved only for an opted-in, locally valid submission. |
+| `capture` | `ScreenshotCaptureProvider` | — | Adds a capture action when `isSupported()` returns true. |
+| `theme` | `"light" \| "dark" \| "auto"` | `"light"` | Selects the color theme. |
+| `colors` | `Partial<BugReportColors>` | — | Overrides semantic colors. |
+| `accentColor` | `string` | — | Overrides the accent color. |
+| `primaryColor` | `string` | — | Overrides primary buttons and the widget trigger. |
+| `fontFamily` | `string` | inherited | Sets the component font stack. |
+| `monoFontFamily` | `string` | inherited | Sets compact attachment-metadata text. |
+| `copy` | `Partial<BugReportCopy>` | built-in English | Overrides labels, errors, and success copy. |
+| `defaultAnonymous` | `boolean` | `false` | Sets the initial anonymous state. |
+| `defaultExpanded` | `boolean` | `false` | Initially displays the optional details. |
+| `defaultIncludeTechnicalContext` | `boolean` | `false` | Sets initial technical-context consent. |
+| `collectBrowserContext` | `boolean` | `true` | Adds browser context only when technical context is selected. |
+| `allowScreenshotUpload` | `boolean` | `true` | Enables the file picker. |
+| `maxAttachmentBytes` | `number` | `10 * 1024 * 1024` | Lowers the screenshot-size limit. |
+| `className` | `string` | — | Adds a class to the form root. |
+| `style` | `CSSProperties` | — | Adds inline styles and may override `--nbr-*` variables. |
+| `onAnonymousChange` | `(anonymous: boolean) => void` | — | Observes anonymous-state changes. |
+| `onSuccess` | `(receipt, report) => void` | — | Runs after successful delivery; callback failures go to `onError`. |
+| `onError` | `(error: unknown) => void` | — | Observes transport, context, and callback failures. |
+
+### `BugReportDialog`
+
+Accepts every `BugReportForm` prop, plus:
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `open` | `boolean` | required | Controls the native dialog. |
+| `onOpenChange` | `(open: boolean) => void` | required | Receives close requests. |
+| `closeLabel` | `string` | `"Close bug report"` | Accessible label for the close button. |
+| `dialogClassName` | `string` | — | Adds a class to the dialog element. |
+
+### `BugReportWidget`
+
+Accepts every `BugReportForm` prop, plus:
+
+| Prop | Type | Default | Description |
+| --- | --- | --- | --- |
+| `defaultOpen` | `boolean` | `false` | Sets the initial uncontrolled open state. |
+| `onOpenChange` | `(open: boolean) => void` | — | Observes open-state changes. |
+| `triggerLabel` | `string` | `"Report a bug"` | Sets visible and accessible trigger text. |
+| `position` | `BugReportWidgetPosition` | `"bottom-right"` | Places the fixed trigger. |
+| `triggerClassName` | `string` | — | Adds a class to the trigger. |
+| `triggerStyle` | `CSSProperties` | — | Adds inline trigger styles. |
+
+### Capture adapters
+
+`createModernScreenshotCapture(options)` accepts `target`, `domToBlob`, `exclude`, `filename`, `backgroundColor`, `maximumCanvasSize`, and `maxScale`. `createDisplayMediaCapture(options)` accepts `mediaDevices`, `filename`, and `maximumCanvasSize`.
+
+The injectable `domToBlob`, `mediaDevices`, and filename functions are useful for native bridges and tests. Most applications should use the defaults.
+
+### Core utilities
+
+| Export | Purpose |
+| --- | --- |
+| `createBugReport` | Validates, trims, normalizes, IDs, and timestamps a report. |
+| `validateBugReportInput` | Throws `BugReportValidationError` with structured `issues`. |
+| `createScreenshotAttachment` | Validates and normalizes a screenshot `Blob`. |
+| `serializeBugReport` | Produces JSON-safe report data and attachment metadata. |
+| `redactBugReport` | Removes contact and technical context. |
+| `formatBytes` | Formats a byte limit without overstating it. |
+| `BUG_REPORT_SCHEMA_VERSION` | Current serialized report schema version. |
+| `BUG_REPORT_SEVERITIES` | Supported severity values. |
+
+### Entry points
+
+| Import | Contents |
+| --- | --- |
+| `react-bug-report` | React components, core types/utilities, and public errors. |
+| `react-bug-report/core` | Provider-neutral data model and utilities, without React. |
+| `react-bug-report/transports/http` | Multipart HTTP adapter. |
+| `react-bug-report/transports/sentry` | Structurally typed Sentry adapter. |
+| `react-bug-report/capture/display-media` | Dependency-free display-sharing capture. |
+| `react-bug-report/capture/modern-screenshot` | Optional DOM capture adapter. |
+| `react-bug-report/style.css` | Complete component stylesheet. |
+
+## Accessibility
+
+The package uses native controls and a native modal `<dialog>`, exposes switch and combobox semantics, associates validation messages with fields, keeps success announcements in a persistent live region, moves focus to the success heading, and retains visible focus styling. Escape, the close button, and a true backdrop click close the dialog; dragging a text selection onto the backdrop does not discard the draft.
+
+On screens up to 600 pixels wide the dialog becomes a bottom sheet, inputs use a 16-pixel font to avoid unwanted mobile zoom, actions grow to touch-friendly sizes, and safe-area insets are respected. Motion is reduced under `prefers-reduced-motion`, and important controls retain borders in forced-colors mode.
+
+The release gate exercises desktop Chromium, desktop Firefox, and mobile Chromium. WebKit and iPhone-sized emulation are available through the extended local matrix.
+
+## Troubleshooting
+
+**The component is unstyled.** Import `react-bug-report/style.css` once. If your bundler tree-shakes CSS, ensure CSS side effects are enabled; the package marks its stylesheet as a side effect.
+
+**The widget is hidden behind application UI.** The trigger uses a high fixed `z-index`, but transformed ancestors, native top-layer elements, and application overlays can still affect composition. Render the widget near the application root and inspect custom `triggerStyle` or host CSS.
+
+**"Capture this page" is missing.** The action renders only when the supplied provider's `isSupported()` returns true. Install `modern-screenshot` for the DOM adapter; for display capture, use a supported desktop browser in a secure context.
+
+**A DOM screenshot is blank or incomplete.** Check cross-origin image and font headers, canvas or WebGL restrictions, cross-origin frames, and the selected target. Offer file upload as the fallback.
+
+**HTTP reports fail with `INVALID_RESPONSE`.** Return `204`, or JSON with at least a non-empty `id` and RFC 3339 `acceptedAt`:
+
+```json
+{
+  "id": "report_123",
+  "acceptedAt": "2026-08-13T12:00:00.000Z",
+  "provider": "internal"
+}
+```
+
+**Sentry reports are not appearing.** Initialize the Sentry browser SDK in the host application, verify its public DSN is available in the browser build, and pass that SDK's `sendFeedback`.
 
 ## Development
 
 ```sh
+git clone https://github.com/nidh-eesh/react-bug-report.git
+cd react-bug-report
 npm install
-npm run typecheck
-npm test
-npm run build
-npx playwright install chromium firefox
-npm run test:e2e
-npm pack --dry-run
+npm run demo
 ```
 
-`test:e2e` runs the desktop Chromium, Pixel-sized Chromium, and desktop Firefox release gate. Run `npx playwright install --with-deps chromium firefox webkit` followed by `npm run test:e2e:all` for the complete desktop Chromium/Firefox/WebKit and Pixel/iPhone-sized matrix. The release entry point is `prepublishOnly`, which runs TypeScript 7 checks, unit/accessibility tests, API-contract validation, builds, the portable browser gate, and package-content inspection.
+The demo runs at `http://127.0.0.1:4178`.
+
+| Command | Purpose |
+| --- | --- |
+| `npm run demo` | Starts the local Vite demo. |
+| `npm run typecheck` | Runs TypeScript without emitting files. |
+| `npm test` | Runs the unit and accessibility suite. |
+| `npm run test:coverage` | Runs tests with enforced coverage thresholds. |
+| `npm run lint:api` | Validates the OpenAPI contract. |
+| `npm run build` | Builds ESM, CommonJS, CSS, source maps, and declarations. |
+| `npm run test:e2e` | Runs the Chromium/Firefox browser gate. |
+| `npm run test:e2e:all` | Runs every configured Playwright project. |
+| `npm run check:pack` | Prints the npm tarball contents without publishing. |
+| `npm run verify` | Runs typecheck, coverage, API lint, and build. |
+
+Install browsers when needed with `npx playwright install chromium firefox`.
+
+## Contributing
+
+Issues and focused pull requests are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the workflow and expectations.
+
+## Security
+
+Client validation is a usability boundary, not a security boundary. The receiving server must independently enforce authentication, size limits, rate limiting, image validation, authorization, retention, and output encoding — see [`openapi.yaml`](./openapi.yaml). Do not ship long-lived provider secrets in browser-side headers; use short-lived authorization or a same-origin backend.
+
+To report a vulnerability, see [SECURITY.md](./SECURITY.md).
 
 ## License
 
-Package source is MIT licensed. No fonts or third-party runtime libraries are bundled; React, React DOM, and optional `modern-screenshot` remain consumer-managed peer dependencies.
+[MIT](./LICENSE) © 2026 nidh-eesh
