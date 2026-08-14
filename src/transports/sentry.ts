@@ -104,7 +104,7 @@ export function createSentryTransport(
     };
     const params: SentryFeedbackParams = {
       message: formatMessage(report),
-      source: options.source ?? "@nidh-eesh/bug-report",
+      source: options.source ?? "react-bug-report",
       ...(report.contact?.name ? { name: report.contact.name } : {}),
       ...(report.contact?.email ? { email: report.contact.email } : {}),
       ...(report.context?.url ? { url: report.context.url } : {}),

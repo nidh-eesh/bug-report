@@ -1,5 +1,5 @@
 {
-  "name": "@nidh-eesh/bug-report",
+  "name": "react-bug-report",
   "version": "0.1.0",
   "description": "An accessible, themeable bug-report form and dialog with provider-neutral transports and optional screenshot capture.",
   "keywords": [
@@ -12,6 +12,14 @@
   ],
   "author": "nidh-eesh",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nidh-eesh/react-bug-report.git"
+  },
+  "homepage": "https://github.com/nidh-eesh/react-bug-report#readme",
+  "bugs": {
+    "url": "https://github.com/nidh-eesh/react-bug-report/issues"
+  },
   "type": "module",
   "sideEffects": [
     "./dist/style.css"

@@ -410,34 +410,37 @@ describe("Sentry transport", () => {
       sendFeedback,
       tags: { product: "editor" },
     });
-    const report = createBugReport({
-      anonymous: false,
-      attachment: createScreenshotAttachment(
-        new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
-        { filename: "screen.png", source: "capture" },
-      ),
-      contact: { email: "ada@example.com", name: "Ada Lovelace" },
-      context: {
-        appVersion: "2.4.0",
-        extra: { routeKind: "editor" },
-        locale: "en-GB",
-        tags: { surface: "toolbar" },
-        userAgent: "Test Browser",
-        url: "https://example.test/editor",
-        viewport: { devicePixelRatio: 2, height: 844, width: 390 },
+    const report = createBugReport(
+      {
+        anonymous: false,
+        attachment: createScreenshotAttachment(
+          new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
+          { filename: "screen.png", source: "capture" },
+        ),
+        contact: { email: "ada@example.com", name: "Ada Lovelace" },
+        context: {
+          appVersion: "2.4.0",
+          extra: { routeKind: "editor" },
+          locale: "en-GB",
+          tags: { surface: "toolbar" },
+          userAgent: "Test Browser",
+          url: "https://example.test/editor",
+          viewport: { devicePixelRatio: 2, height: 844, width: 390 },
+        },
+        details: {
+          actual: "Nothing happened",
+          expected: "It should save",
+          severity: "blocking",
+          steps: "Press Save",
+        },
+        includeTechnicalContext: true,
+        message: "Saving failed.",
       },
-      details: {
-        actual: "Nothing happened",
-        expected: "It should save",
-        severity: "blocking",
-        steps: "Press Save",
+      {
+        id: "report-sentry-1",
+        now: () => new Date("2026-08-13T00:00:00.000Z"),
       },
-      includeTechnicalContext: true,
-      message: "Saving failed.",
-    }, {
-      id: "report-sentry-1",
-      now: () => new Date("2026-08-13T00:00:00.000Z"),
-    });
+    );
 
     await expect(transport(report)).resolves.toEqual({
       id: "sentry-event-1",
@@ -447,6 +450,7 @@ describe("Sentry transport", () => {
     expect(sendFeedback.mock.calls[0]?.[0]).toMatchObject({
       email: "ada@example.com",
       name: "Ada Lovelace",
+      source: "react-bug-report",
       tags: {
         bug_report_id: "report-sentry-1",
         product: "editor",

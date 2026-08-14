@@ -7,7 +7,7 @@ info:
     identifier: MIT
   description: >-
     Provider-neutral server contract used by
-    @nidh-eesh/bug-report/transports/http. Authentication and retention are
+    react-bug-report/transports/http. Authentication and retention are
     deployment-specific.
 security: []
 servers:
@@ -44,6 +44,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BugReportReceipt"
+        "204":
+          description: Report accepted without a response body
         "400":
           $ref: "#/components/responses/BadRequest"
         "413":

@@ -1,5 +1,5 @@
 const SHARED_ERROR_REGISTRY = Symbol.for(
-  "@nidh-eesh/bug-report/v1/error-constructors",
+  "react-bug-report/v1/error-constructors",
 );
 
 type StoredErrorConstructor = new (...args: never[]) => Error;
