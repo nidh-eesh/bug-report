@@ -9,6 +9,14 @@ export interface SentryFeedbackParams {
   tags?: Record<string, string>;
 }
 
+/**
+ * Keeps the always-present `url` key off the exported type, which stays
+ * assignable to Sentry's `SendFeedbackParams` and its `url?: string`.
+ */
+type OutgoingFeedbackParams = Omit<SentryFeedbackParams, "url"> & {
+  url: string | undefined;
+};
+
 export interface SentryAttachment {
   data: Uint8Array;
   filename: string;
@@ -102,12 +110,15 @@ export function createSentryTransport(
       // searchable tag instead of passing it as associatedEventId.
       bug_report_id: report.id,
     };
-    const params: SentryFeedbackParams = {
+    const params: OutgoingFeedbackParams = {
       message: formatMessage(report),
       source: options.source ?? "react-bug-report",
       ...(report.contact?.name ? { name: report.contact.name } : {}),
       ...(report.contact?.email ? { email: report.contact.email } : {}),
-      ...(report.context?.url ? { url: report.context.url } : {}),
+      // Sentry substitutes the current page address for a missing url, so keep
+      // the key even when empty. `undefined` overrides it; an absent key does
+      // not. Not a conditional spread, deliberately.
+      url: report.context?.url || undefined,
       ...(Object.keys(tags).length > 0 ? { tags } : {}),
     };
 
@@ -128,8 +139,8 @@ export function createSentryTransport(
     }
 
     const result = await options.sendFeedback(
-      params,
-      Object.keys(hint).length > 0 ? hint : undefined,
+      params as SentryFeedbackParams,
+      hint,
     );
     const id = eventIdFromResult(result);
     return { ...(id ? { id } : {}), provider: "sentry" };

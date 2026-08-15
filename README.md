@@ -205,7 +205,9 @@ The adapter:
 
 - maps contact name and email only when the report is not anonymous
 - appends steps, expected behavior, and actual behavior to the feedback message
-- forwards the report URL and tags
+- forwards the report URL and tags, and sends the URL as `undefined` when the
+  report has none, so `sendFeedback` cannot substitute the current page address
+  in its place
 - adds severity when the reporter explicitly selected it
 - adds the package report ID as the searchable `bug_report_id` tag
 - forwards timestamps and opted-in technical context through `captureContext.extra`
@@ -248,6 +250,10 @@ Technical context defaults off. When selected, the form can include:
 - host-provided URL, application version, tags, and extra values
 
 The `context` function is evaluated only after local fields pass validation and only when technical context is enabled. Set `collectBrowserContext={false}` to send only host-provided context. Avoid supplying secrets, access tokens, or sensitive URL query and hash values.
+
+Leaving technical context off means no URL is sent. The Sentry adapter states that absence explicitly rather than omitting the field, so the SDK cannot reinstate the reporter's address behind that choice; see the adapter notes above. The HTTP transport posts the report as given and derives nothing of its own.
+
+Report contents are the only thing these transports control. A destination still applies its own enrichment: Sentry, for instance, attaches whatever the host set through `Sentry.setUser()` to every event, anonymous reports included.
 
 `redactBugReport(report)` removes both `contact` and `context`. The form and built-in transports never call it automatically.
 

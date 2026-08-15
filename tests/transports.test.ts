@@ -507,6 +507,77 @@ describe("Sentry transport", () => {
     expect(sendFeedback.mock.calls[0]?.[0]).not.toHaveProperty("name");
   });
 
+  it("states the report URL even when there is none, so the SDK cannot fill in the page address", async () => {
+    const delivered: Array<string | undefined> = [];
+    // Merges its default the way Sentry does, verified against
+    // @sentry/feedback 10.70.0.
+    const sendFeedback = vi.fn(
+      async (params: SentryFeedbackParams, _hint?: SentryFeedbackHint) => {
+        const withProviderDefault = {
+          url: "https://app.example/invite/secret-token?key=value",
+          ...params,
+        };
+        delivered.push(withProviderDefault.url);
+        return "event-url-1";
+      },
+    );
+    const transport = createSentryTransport({ sendFeedback });
+
+    await transport(
+      createBugReport({
+        anonymous: true,
+        includeTechnicalContext: false,
+        message: "The button failed.",
+      }),
+    );
+
+    expect(sendFeedback.mock.calls[0]?.[0]).toHaveProperty("url");
+    expect(sendFeedback.mock.calls[0]?.[0].url).toBeUndefined();
+    expect(delivered[0]).toBeUndefined();
+  });
+
+  it("treats a blank host-supplied URL as absent rather than sending it", async () => {
+    const sendFeedback = vi.fn(
+      async (_params: SentryFeedbackParams, _hint?: SentryFeedbackHint) =>
+        "event-url-2",
+    );
+    const transport = createSentryTransport({ sendFeedback });
+
+    await transport(
+      createBugReport({
+        anonymous: true,
+        context: { url: "" },
+        includeTechnicalContext: true,
+        message: "The button failed.",
+      }),
+    );
+
+    expect(sendFeedback.mock.calls[0]?.[0]).toHaveProperty("url");
+    expect(sendFeedback.mock.calls[0]?.[0].url).toBeUndefined();
+  });
+
+  it("accepts a sendFeedback declared the way Sentry declares it", () => {
+    // Fails typecheck, not the assertion, if SentryFeedbackParams stops
+    // matching this shape under exactOptionalPropertyTypes.
+    interface SentrySendFeedbackParams {
+      message: string;
+      name?: string;
+      email?: string;
+      url?: string;
+      source?: string;
+      associatedEventId?: string;
+      tags?: Record<string, string>;
+    }
+    const sdkSendFeedback = async (
+      _params: SentrySendFeedbackParams,
+      _hint?: { includeReplay?: boolean },
+    ): Promise<string> => "event-type-1";
+
+    expect(() =>
+      createSentryTransport({ sendFeedback: sdkSendFeedback }),
+    ).not.toThrow();
+  });
+
   it("supports object event IDs, custom sources, and capture context", async () => {
     const sendFeedback = vi.fn(
       async (_params: SentryFeedbackParams, _hint?: SentryFeedbackHint) => ({
